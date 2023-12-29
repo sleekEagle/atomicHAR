@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import hydra
 import os
+from torch.utils.data import Dataset
 
 path='D:\\data\\UTD_MHAD\\'
 
@@ -60,15 +61,66 @@ def get_curvature(data):
     k_mag=np.linalg.norm(k, axis=0)
     return k_mag
 
-sk_files,in_files = list_files(path)
+# sk_files,in_files = list_files(path)
 
-sk_file=sk_files[0]
-in_file=in_files[0]
-xyz=get_wrist_xyz(sk_file)
-imu=get_imu(in_file)
+# sk_file=sk_files[0]
+# in_file=in_files[0]
+# xyz=get_wrist_xyz(sk_file)
+# imu=get_imu(in_file)
 
-xyz_resampled=resample_data(xyz,imu.shape[0])
-curvature=get_curvature(xyz_resampled)
-plt.plot(curvature)
+# xyz_resampled=resample_data(xyz,imu.shape[0])
+# curvature=get_curvature(xyz_resampled)
+# plt.plot(curvature)
+# plt.show()
+
+
+class UTD_MHAD(Dataset):
+    def __init__(self, data_dir,resample=True,curvature=True,actions=[1,2,3],subjects=[1,2]):
+        self.data_dir=data_dir
+        self.sk_files,self.in_files = list_files(data_dir,actions,subjects)
+        self.resample=resample
+        self.curvature=curvature
+
+    def __len__(self):
+        return len(self.sk_files)
+
+    def __getitem__(self, idx):
+        sk_file=self.sk_files[idx]
+        in_file=self.in_files[idx]
+        xyz=get_wrist_xyz(sk_file)
+        imu=get_imu(in_file)
+        if self.resample:
+            xyz_resampled=resample_data(xyz,imu.shape[0])
+        else:
+            xyz_resampled=xyz
+        if self.curvature:
+            curvature=get_curvature(xyz_resampled)
+        else:
+            curvature=-1
+        return imu,xyz_resampled,curvature
+    
+
+from torch.utils.data import DataLoader
+training_data=UTD_MHAD(data_dir=path,actions=list(np.arange(1,22)),subjects=list(np.arange(1,9)))
+train_dataloader = DataLoader(training_data, batch_size=1, shuffle=True)
+
+cur_list=[]
+for i,input in enumerate(train_dataloader):
+    imu,xyz_resampled,curvature=input
+    cur_list.extend(list(curvature[0].numpy()))
+
+cur_ar=np.array(cur_list)
+cur_ar=np.power(cur_ar)
+# cur_ar=cur_ar[cur_ar<1000]
+plt.hist(cur_list, bins=500, color='skyblue', edgecolor='black')  # Adjust the number of bins as needed
+plt.xlabel('Values')
+plt.ylabel('Frequency')
+plt.title('Histogram of Values')
+plt.grid(True)
 plt.show()
+
+
+
+
+
 
