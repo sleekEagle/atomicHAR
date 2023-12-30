@@ -107,17 +107,26 @@ class UTD_MHAD(Dataset):
             xyz_resampled=xyz
         if self.curvature:
             curvature=get_curvature(xyz_resampled)
+            curv_class=np.zeros_like(curvature)
+            for i,range in enumerate(self.ranges):
+                idx=np.argwhere((curvature<range[1]) & (curvature>=range[0]))
+                curv_class[idx]=i
         else:
             curvature=-1
+            curv_class=-1
 
         #pad samples so there length (in time axis) would be self.padded_len
-        imu=np.swapaxes(imu,0,1)
         curvature=np.expand_dims(curvature,axis=0)
+        curv_class=np.expand_dims(curv_class,axis=0)
+        imu=np.swapaxes(imu,0,1)
         imu_padded=self.get_padded_array(imu,self.padded_len)
         curvature_padded=self.get_padded_array(curvature,self.padded_len)
+        curvature_padded=np.squeeze(curvature_padded)
+        curv_class_padded=self.get_padded_array(curv_class,self.padded_len)
+        curv_class_padded=np.squeeze(curv_class_padded)
         xyz_resampled_padded=self.get_padded_array(xyz_resampled,self.padded_len)
 
-        return imu_padded,xyz_resampled_padded,curvature_padded
+        return imu_padded,xyz_resampled_padded,curvature_padded,curv_class_padded
     
     def get_padded_array(self,array,padded_len):
         sample_len=array.shape[1]
@@ -136,8 +145,9 @@ train_dataloader = DataLoader(training_data, batch_size=2, shuffle=True)
 cur_list=[]
 lens=[]
 for i,input in enumerate(train_dataloader):
-    imu,xyz_resampled,curvature=input
+    imu,xyz_resampled,curvature,curv_class=input
     lens.append(curvature.shape[1])
+    break
 #     break
 #     cur_list.extend(list(curvature[0].numpy()))
 
@@ -151,17 +161,17 @@ for i,input in enumerate(train_dataloader):
 # plt.grid(True)
 # plt.show()
 
-
-# nums=[]
-# cur_class=np.zeros_like(cur_ar)
-# for i,range in enumerate(ranges):
-#     idx=np.argwhere((cur_ar<range[1]) & (cur_ar>=range[0]))
-#     cur_class[idx]=i
+ranges=get_curv_range()
+nums=[]
+cur_class=np.zeros_like(curvature)
+for i,range in enumerate(ranges):
+    idx=np.argwhere((curvature<range[1]) & (curvature>=range[0]))
+    cur_class[idx]=i
     
-#     ar=cur_ar[cur_ar<range[1]]
-#     ar=ar[ar>range[0]]
-#     n=len(ar)
-#     nums.append(n)
+    ar=cur_ar[cur_ar<range[1]]
+    ar=ar[ar>range[0]]
+    n=len(ar)
+    nums.append(n)
 
 
 
