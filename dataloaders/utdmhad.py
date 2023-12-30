@@ -61,6 +61,16 @@ def get_curvature(data):
     k_mag=np.linalg.norm(k, axis=0)
     return k_mag
 
+#create curvature intervals
+def get_curv_range(end=20000,base=1.2):
+    ranges=[]
+    i=0
+    while i<end:
+        range=pow(base,i)
+        ranges.append([i,i+range])
+        i=i+range
+    return ranges
+
 # sk_files,in_files = list_files(path)
 
 # sk_file=sk_files[0]
@@ -80,6 +90,8 @@ class UTD_MHAD(Dataset):
         self.sk_files,self.in_files = list_files(data_dir,actions,subjects)
         self.resample=resample
         self.curvature=curvature
+        self.ranges=get_curv_range()
+        self.padded_len=400
 
     def __len__(self):
         return len(self.sk_files)
@@ -97,27 +109,66 @@ class UTD_MHAD(Dataset):
             curvature=get_curvature(xyz_resampled)
         else:
             curvature=-1
-        return imu,xyz_resampled,curvature
+
+        #pad samples so there length (in time axis) would be self.padded_len
+        imu=np.swapaxes(imu,0,1)
+        curvature=np.expand_dims(curvature,axis=0)
+        imu_padded=self.get_padded_array(imu,self.padded_len)
+        curvature_padded=self.get_padded_array(curvature,self.padded_len)
+        xyz_resampled_padded=self.get_padded_array(xyz_resampled,self.padded_len)
+
+        return imu_padded,xyz_resampled_padded,curvature_padded
+    
+    def get_padded_array(self,array,padded_len):
+        sample_len=array.shape[1]
+        length_diff=padded_len-sample_len
+        if length_diff > 0:
+            padded_array = np.pad(array, ((0,0),(0,length_diff)), mode='constant', constant_values=0)
+        else:
+            padded_array = array
+        return padded_array
     
 
 from torch.utils.data import DataLoader
 training_data=UTD_MHAD(data_dir=path,actions=list(np.arange(1,22)),subjects=list(np.arange(1,9)))
-train_dataloader = DataLoader(training_data, batch_size=1, shuffle=True)
+train_dataloader = DataLoader(training_data, batch_size=2, shuffle=True)
 
 cur_list=[]
+lens=[]
 for i,input in enumerate(train_dataloader):
     imu,xyz_resampled,curvature=input
-    cur_list.extend(list(curvature[0].numpy()))
+    lens.append(curvature.shape[1])
+#     break
+#     cur_list.extend(list(curvature[0].numpy()))
 
-cur_ar=np.array(cur_list)
-cur_ar=np.power(cur_ar)
-# cur_ar=cur_ar[cur_ar<1000]
-plt.hist(cur_list, bins=500, color='skyblue', edgecolor='black')  # Adjust the number of bins as needed
-plt.xlabel('Values')
-plt.ylabel('Frequency')
-plt.title('Histogram of Values')
-plt.grid(True)
-plt.show()
+# cur_ar=np.array(cur_list)
+# # cur_ar=np.power(cur_ar)
+# # cur_ar=cur_ar[cur_ar<700]
+# plt.hist(cur_ar, bins=500, color='skyblue', edgecolor='black')  # Adjust the number of bins as needed
+# plt.xlabel('Values')
+# plt.ylabel('Frequency')
+# plt.title('Histogram of Values')
+# plt.grid(True)
+# plt.show()
+
+
+# nums=[]
+# cur_class=np.zeros_like(cur_ar)
+# for i,range in enumerate(ranges):
+#     idx=np.argwhere((cur_ar<range[1]) & (cur_ar>=range[0]))
+#     cur_class[idx]=i
+    
+#     ar=cur_ar[cur_ar<range[1]]
+#     ar=ar[ar>range[0]]
+#     n=len(ar)
+#     nums.append(n)
+
+
+
+# plt.plot(nums)
+# plt.show()
+
+
 
 
 
