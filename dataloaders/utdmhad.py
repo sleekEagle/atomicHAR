@@ -158,21 +158,26 @@ class UTD_MHAD(Dataset):
         #combine adjecent clusters if they are nearby
         thres1=10
         i=0
-        while i<(len(end_idx)-1):
-            idx=end_idx[i]
-            if i+1>len(end_idx)-1:
+        l=max(len(start_idx),len(end_idx))
+        last_end,last_end_idx=0,0
+        while i<(l-1):
+            if i<len(end_idx):
+                idx=end_idx[i]
+                last_end=idx
+                last_end_idx=i
+            if i+1>=len(start_idx):
                 break
             next_start=start_idx[i+1]   
-            diff=next_start-idx  
+            diff=next_start-last_end  
             if diff < thres1:
                 #remove start and end idx items from the list
                 del start_idx[i+1]
-                del end_idx[i]  
+                del end_idx[last_end_idx]  
             else:  
                 i=i+1
 
         #remove clusters of 1 if they are too small
-        thres2=10
+        thres2=7
         i=0
         while i<(len(end_idx)-1):
             if i>len(end_idx)-1:
@@ -189,11 +194,11 @@ class UTD_MHAD(Dataset):
         #create the segmentation vector
         seg=np.zeros_like(c)
         for i,start in enumerate(start_idx):
-            seg[int(start)]=1
-            if i>len(end_idx)-1:
-                break
-            end=end_idx[i]
-            seg[int(end)]=1
+            if i>0:
+                seg[int(start)]=1
+            if i < len(end_idx):
+                end=end_idx[i]
+                seg[int(end)]=1
         return seg
 
 
