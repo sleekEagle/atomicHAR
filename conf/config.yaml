@@ -2,3 +2,16 @@ db:
   driver: mysql
   user: omry
   pass: secret
+data:
+  dataset: utdmhad
+
+utdmhad:
+  path: C:\\Users\\lahir\\data\\UTD_MHAD\\
+  train:
+    bs: 4
+    actions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    subjects: [1, 2, 3, 4, 5]
+  test:
+    bs: 1
+    actions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    subjects: [6, 7, 8]
