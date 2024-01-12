@@ -7,20 +7,21 @@ import torch
 from torch import nn, Tensor
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.utils.data import dataset
+import torch.nn.functional as F
 
 class TransformerModel(nn.Module):
 
-    def __init__(self, d_model: int, nhead: int, dim_feedforward : int,
-                 nlayers: int, dropout: float = 0.5, device: int=0):
+    def __init__(self, d_model: int, n_head: int, dim_feedforward : int,
+                 num_layers: int, d_out:int, dropout: float = 0.5, device: int=0):
         super().__init__()
         self.device=device
         self.model_type = 'Transformer'
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layers = TransformerEncoderLayer(d_model, nhead, dim_feedforward , dropout)
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        # self.embedding = nn.Embedding(ntoken, d_model)
+        encoder_layers = TransformerEncoderLayer(d_model, n_head, dim_feedforward , dropout)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers)
+        self.embedding = nn.Embedding(512, d_model)
         self.d_model = d_model
-        # self.linear = nn.Linear(d_model, ntoken)
+        self.linear = nn.Linear(d_model,d_out)
 
         # self.init_weights()
 
@@ -47,7 +48,7 @@ class TransformerModel(nn.Module):
             """
             src_mask = nn.Transformer.generate_square_subsequent_mask(len(src)).to(self.device)
         output = self.transformer_encoder(src, src_mask)
-        # output = self.linear(output)
+        output = self.linear(output)
         return output
     
 
