@@ -19,10 +19,10 @@ utdmhad:
   model:
     transformer: 
       d_model: 128
-      num_layers: 3
+      num_layers: 4
       n_head: 4
       dropout: 0.2
       dim_feedforward: 64
-      d_out: 1
+      d_out: 5
     cnn:
       in_channels: 6
