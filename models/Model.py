@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.Encoder import CNN,Linear_encoder
 from models.Transformer import TransformerModel
-from models.Decoder import Linear_decoder
+from models.Decoder import CNN_decoder
 import torch
 
 class AtomicHAR(nn.Module):
@@ -26,22 +26,31 @@ class AtomicHAR(nn.Module):
                                      dropout=tr_conf.dropout,
                                      device=0)
         self.transformer=self.transformer.double()
-        self.decoder=Linear_decoder().double()
+        self.decoder=CNN_decoder().double()
+
+        self.lin_bridge1 = nn.Linear(32*2, 32).double()
+        self.lin_bridge2 = nn.Linear(32, 32).double()
+
         self.encoder=Linear_encoder().double()
 
     def forward(self, x):
         cnn_out=self.cnn(x)
-        cnn_out=torch.swapaxes(cnn_out,0,2)
-        cnn_out=torch.swapaxes(cnn_out,1,2)
+        l,_,_=cnn_out.shape
+        cnn_out=cnn_out.view(l,-1)
+        bridge_out=F.relu(self.lin_bridge1(cnn_out))
+        bridge_out=F.relu(self.lin_bridge2(bridge_out))
+        bridge_out=bridge_out.view(l,8,4)
+        # cnn_out=torch.swapaxes(cnn_out,0,2)
+        # cnn_out=torch.swapaxes(cnn_out,1,2)
 
         # lin_out=self.encoder(x)
 
-        trans_out=self.transformer(cnn_out)
-        embeddings=trans_out[39::40,:,:]
-        embeddings=torch.swapaxes(embeddings,0,1)
-        bs,seq,dim=embeddings.shape
-        embeddings=embeddings.reshape(-1,dim)
+        # trans_out=self.transformer(cnn_out)
+        # embeddings=trans_out[19::20,:,:]
+        # embeddings=torch.swapaxes(embeddings,0,1)
+        # bs,seq,dim=embeddings.shape
+        # embeddings=embeddings.reshape(-1,dim)
 
         #decode to recreate the spacial signal
-        gen=self.decoder(embeddings)
+        gen=self.decoder(bridge_out)
         return gen

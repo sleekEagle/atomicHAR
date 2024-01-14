@@ -92,13 +92,20 @@ def get_curv_range(end=20000,base=2.5):
 
 
 class UTD_MHAD(Dataset):
-    def __init__(self, data_dir,resample=True,curvature=True,actions=[1,2,3],subjects=[1,2]):
+    def __init__(self, data_dir,
+                 resample=True,
+                 curvature=True,
+                 imu_seg=True,
+                 actions=[1,2,3],
+                 subjects=[1,2]):
         self.data_dir=data_dir
+        self.imu_seg=imu_seg
         self.sk_files,self.in_files = list_files(data_dir,actions,subjects)
         self.resample=resample
         self.curvature=curvature
         self.ranges=get_curv_range()
         self.padded_len=400
+        self.norms=[1.0,1.0,1.0,300.0,300.0,300.0]
 
     def __len__(self):
         return len(self.sk_files)
@@ -122,22 +129,46 @@ class UTD_MHAD(Dataset):
         else:
             curvature=-1
             curv_class=-1
-        seg=self.get_curve_segmentation(curvature)
-        seg=np.expand_dims(seg,axis=0)
-        seg_padded=self.get_padded_array(seg,self.padded_len)
-        seg_padded=np.squeeze(seg_padded)
-        #pad samples so there length (in time axis) would be self.padded_len
-        curvature=np.expand_dims(curvature,axis=0)
-        curv_class=np.expand_dims(curv_class,axis=0)
-        imu=np.swapaxes(imu,0,1)
-        imu_padded=self.get_padded_array(imu,self.padded_len)
-        curvature_padded=self.get_padded_array(curvature,self.padded_len)
-        curvature_padded=np.squeeze(curvature_padded)
-        curv_class_padded=self.get_padded_array(curv_class,self.padded_len)
-        curv_class_padded=np.squeeze(curv_class_padded)
-        xyz_resampled_padded=self.get_padded_array(xyz_resampled,self.padded_len)
+        if self.imu_seg:
+            #padding
+            imu=np.swapaxes(imu,0,1)
+            imu_padded=self.get_padded_array(imu,self.padded_len)
+            #break into segments
+            imu_seg=np.split(imu_padded,20,axis=1)
+            imu_seg=np.stack(imu_seg)
+            #normalize
+            seq,dim,len=imu_seg.shape
+            norm=np.array(self.norms)
+            norm=np.expand_dims(norm,axis=1)
+            norm=np.expand_dims(norm,axis=2)
+            norm=np.swapaxes(norm,0,1)
+            norm=np.repeat(norm,repeats=seq,axis=0)
+            norm=np.repeat(norm,repeats=len,axis=2)
+            imu_seg_norm=imu_seg/norm
 
-        return imu_padded,xyz_resampled_padded,curvature_padded,curv_class_padded,seg_padded
+            #pad xyz array
+            xyz_padded=self.get_padded_array(xyz_resampled,self.padded_len)
+            xyz_seg=np.split(xyz_padded,20,axis=1)
+            xyz_seg=np.stack(xyz_seg)
+            return imu_seg_norm,xyz_seg
+        
+        else:
+            seg=self.get_curve_segmentation(curvature)
+            seg=np.expand_dims(seg,axis=0)
+            seg_padded=self.get_padded_array(seg,self.padded_len)
+            seg_padded=np.squeeze(seg_padded)
+            #pad samples so there length (in time axis) would be self.padded_len
+            curvature=np.expand_dims(curvature,axis=0)
+            curv_class=np.expand_dims(curv_class,axis=0)
+            imu=np.swapaxes(imu,0,1)
+            imu_padded=self.get_padded_array(imu,self.padded_len)
+            curvature_padded=self.get_padded_array(curvature,self.padded_len)
+            curvature_padded=np.squeeze(curvature_padded)
+            curv_class_padded=self.get_padded_array(curv_class,self.padded_len)
+            curv_class_padded=np.squeeze(curv_class_padded)
+            xyz_resampled_padded=self.get_padded_array(xyz_resampled,self.padded_len)
+
+            return imu_padded,xyz_resampled_padded,curvature_padded,curv_class_padded,seg_padded
     
     def get_padded_array(self,array,padded_len):
         sample_len=array.shape[1]
@@ -208,7 +239,8 @@ class UTD_MHAD(Dataset):
         return seg
     
 def get_dataloader(config):
-    training_data=UTD_MHAD(data_dir=path,
+    training_data=UTD_MHAD(data_dir=config.utdmhad.path,
+                           imu_seg=config.utdmhad.imu_seg,
                            actions=list(config.utdmhad.train.actions),
                            subjects=list(config.utdmhad.train.subjects))
     train_dataloader = DataLoader(training_data, batch_size=config.utdmhad.train.bs, shuffle=True)
