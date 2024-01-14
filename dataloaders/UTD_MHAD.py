@@ -4,6 +4,7 @@ import numpy as np
 import os
 from scipy import signal
 from torch.utils.data import Dataset, DataLoader
+import math
 
 '''
 how to create a dataloader
@@ -106,6 +107,7 @@ class UTD_MHAD(Dataset):
         self.ranges=get_curv_range()
         self.padded_len=400
         self.norms=[1.0,1.0,1.0,300.0,300.0,300.0]
+        self.seq_len=20
 
     def __len__(self):
         return len(self.sk_files)
@@ -131,10 +133,11 @@ class UTD_MHAD(Dataset):
             curv_class=-1
         if self.imu_seg:
             #padding
+            imu_len,dim=imu.shape
             imu=np.swapaxes(imu,0,1)
             imu_padded=self.get_padded_array(imu,self.padded_len)
             #break into segments
-            imu_seg=np.split(imu_padded,20,axis=1)
+            imu_seg=np.split(imu_padded,self.seq_len,axis=1)
             imu_seg=np.stack(imu_seg)
             #normalize
             seq,dim,len=imu_seg.shape
@@ -148,9 +151,24 @@ class UTD_MHAD(Dataset):
 
             #pad xyz array
             xyz_padded=self.get_padded_array(xyz_resampled,self.padded_len)
-            xyz_seg=np.split(xyz_padded,20,axis=1)
+            xyz_seg=np.split(xyz_padded,self.seq_len,axis=1)
             xyz_seg=np.stack(xyz_seg)
-            return imu_seg_norm,xyz_seg
+            xyz_first=xyz_seg[:,:,0]
+            xyz_first=np.expand_dims(xyz_first,axis=2)
+            xyz_first=np.repeat(xyz_first,repeats=len,axis=2)
+            xyz_seg_norm=xyz_seg-xyz_first
+
+            #create the mask 
+            valid_data_seq=math.ceil(imu_len/self.seq_len)
+            valid_data_seq=min(math.ceil(self.padded_len/self.seq_len),valid_data_seq)
+
+            imu_mask=np.zeros_like(imu_seg_norm)
+            imu_mask[0:valid_data_seq,:,:]=1
+
+            xyz_mask=np.zeros_like(xyz_seg_norm)
+            xyz_mask[0:valid_data_seq,:,:]=1
+
+            return imu_seg_norm,xyz_seg_norm,imu_mask,xyz_mask
         
         else:
             seg=self.get_curve_segmentation(curvature)

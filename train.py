@@ -33,6 +33,7 @@ def main(conf : DictConfig) -> None:
     
     for epoch in range(1000):
         mean_loss=0
+        mean_imu_loss,mean_xyz_loss=0,0
         print(f'epoch={epoch}')
 
         if (epoch+1)%10==0:
@@ -40,12 +41,11 @@ def main(conf : DictConfig) -> None:
             scheduler.step()
             lr=get_lr(optimizer)
             print(f'new lr={lr}')
+        if(epoch==200):
+            break
 
         for i,input in enumerate(train_dataloader):
-            imu,xyz=input
-            bs,seq,dim,l=imu.shape
-            imu_input=torch.reshape(imu,(-1,dim,l))
-
+            imu,xyz,imu_mask,xyz_mask=input
             #create segmentation points
             # seg=torch.zeros_like(curvature)
             # seg_len=20
@@ -69,21 +69,31 @@ def main(conf : DictConfig) -> None:
 
             optimizer.zero_grad()
 
-            result=athar_model(imu_input)
+            imu_gen,xyz_gen=athar_model(imu)
 
-            loss=MSE_loss_fn(imu_input,result)
+            imu_loss=MSE_loss_fn(imu*imu_mask,imu_gen*imu_mask)
+            xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
+            loss=xyz_loss*3+imu_loss
+
             loss.backward()
             optimizer.step()
             mean_loss+=loss.item()
+            mean_imu_loss+=imu_loss.item()
+            mean_xyz_loss+=xyz_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
-        print(f'loss={mean_loss}')
+        mean_xyz_loss=mean_xyz_loss/len(train_dataloader)
+        mean_imu_loss=mean_imu_loss/len(train_dataloader)
+
+        print(f'xyz loss = {mean_xyz_loss}, IMU loss= {mean_imu_loss} total loss={mean_loss}')
         mean_loss=0
+        mean_imu_loss=0
+        mean_xyz_loss=0
 
     print('broke')
-    print(result.shape)
-    plt.plot(result.detach().cpu().numpy()[0,0,:])
-    plt.plot(imu[0,0,:].detach().cpu().numpy())
+    # print(result.shape)
+    # plt.plot(result.detach().cpu().numpy()[0,0,:])
+    # plt.plot(imu[0,0,:].detach().cpu().numpy())
 
 
 

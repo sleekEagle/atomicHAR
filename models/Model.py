@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.Encoder import CNN,Linear_encoder
 from models.Transformer import TransformerModel
-from models.Decoder import CNN_decoder
+from models.Decoder import CNN_imu_decoder,CNN_xyz_decoder
 import torch
 
 class AtomicHAR(nn.Module):
@@ -26,7 +26,8 @@ class AtomicHAR(nn.Module):
                                      dropout=tr_conf.dropout,
                                      device=0)
         self.transformer=self.transformer.double()
-        self.decoder=CNN_decoder().double()
+        self.imu_decoder=CNN_imu_decoder().double()
+        self.xyz_decoder=CNN_xyz_decoder().double()
 
         self.lin_bridge1 = nn.Linear(32*2, 32).double()
         self.lin_bridge2 = nn.Linear(32, 32).double()
@@ -34,12 +35,29 @@ class AtomicHAR(nn.Module):
         self.encoder=Linear_encoder().double()
 
     def forward(self, x):
-        cnn_out=self.cnn(x)
+        #encooding
+        bs,seq,dim,l=x.shape
+        imu_input=torch.reshape(x,(-1,dim,l))
+        cnn_out=self.cnn(imu_input)
         l,_,_=cnn_out.shape
         cnn_out=cnn_out.view(l,-1)
         bridge_out=F.relu(self.lin_bridge1(cnn_out))
         bridge_out=F.relu(self.lin_bridge2(bridge_out))
+        
+        #transformer
+        tr_input=torch.reshape(bridge_out,(seq,bs,-1))
         bridge_out=bridge_out.view(l,8,4)
+
+        tr_out=self.transformer(tr_input)
+        _,_,dim=tr_out.shape
+        tr_out=torch.reshape(tr_out,(-1,dim))
+        tr_out=tr_out.view(seq*bs,8,4)
+
+        #xyz decoder
+        xyz_gen=self.xyz_decoder(tr_out)
+        _,dim,l=xyz_gen.shape
+        xyz_gen=torch.reshape(xyz_gen,(bs,seq,dim,l))
+
         # cnn_out=torch.swapaxes(cnn_out,0,2)
         # cnn_out=torch.swapaxes(cnn_out,1,2)
 
@@ -51,6 +69,8 @@ class AtomicHAR(nn.Module):
         # bs,seq,dim=embeddings.shape
         # embeddings=embeddings.reshape(-1,dim)
 
-        #decode to recreate the spacial signal
-        gen=self.decoder(bridge_out)
-        return gen
+        #IMU decoder
+        imu_gen=self.imu_decoder(bridge_out)
+        _,dim,l=imu_gen.shape
+        imu_gen=torch.reshape(imu_gen,(bs,seq,dim,l))
+        return imu_gen,xyz_gen
