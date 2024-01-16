@@ -32,8 +32,7 @@ def main(conf : DictConfig) -> None:
     print(f'new lr={lr}')
     
     for epoch in range(1000):
-        mean_loss=0
-        mean_imu_loss,mean_xyz_loss=0,0
+        mean_loss,mean_imu_loss,mean_forcast_loss=0,0,0
         print(f'epoch={epoch}')
 
         if (epoch+1)%10==0:
@@ -69,28 +68,39 @@ def main(conf : DictConfig) -> None:
 
             optimizer.zero_grad()
 
-            imu_gen,xyz_gen=athar_model(imu)
+            output=athar_model(imu)
 
-            imu_loss=MSE_loss_fn(imu*imu_mask,imu_gen*imu_mask)
-            xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=xyz_loss*3+imu_loss
+            imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
+            forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
+                                     output['forcast']*output['forcast_mask'])
+            # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
+            loss=imu_loss+forcast_loss*0.1
 
             loss.backward()
             optimizer.step()
             mean_loss+=loss.item()
             mean_imu_loss+=imu_loss.item()
-            mean_xyz_loss+=xyz_loss.item()
+            mean_forcast_loss+=forcast_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
-        mean_xyz_loss=mean_xyz_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
+        mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
 
-        print(f'xyz loss = {mean_xyz_loss}, IMU loss= {mean_imu_loss} total loss={mean_loss}')
+        print(f'IMU loss = {mean_imu_loss:.5f}, forcast loss= {mean_forcast_loss:.5f} total loss={mean_loss:.2f}')
         mean_loss=0
         mean_imu_loss=0
-        mean_xyz_loss=0
+        mean_forcast_loss=0
 
     print('broke')
+
+    real=torch.reshape(output['forcast_real'],(2,20,-1))
+    forcast=torch.reshape(output['forcast'],(2,20,-1))
+    d=(real-forcast)
+    d=torch.mean(d,dim=2)
+    d_plot=d[0,:].detach().cpu().numpy()
+
+
+
     # print(result.shape)
     # plt.plot(result.detach().cpu().numpy()[0,0,:])
     # plt.plot(imu[0,0,:].detach().cpu().numpy())

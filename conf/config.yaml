@@ -6,6 +6,7 @@ data:
   dataset: utdmhad
   num_sensors: 6
 
+
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
   imu_seg: True
@@ -19,7 +20,7 @@ utdmhad:
     subjects: [6, 7, 8]
   model:
     transformer: 
-      d_model: 32
+      d_model: 4
       num_layers: 1
       n_head: 4
       dropout: 0.2
