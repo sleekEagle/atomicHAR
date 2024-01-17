@@ -37,7 +37,7 @@ class AtomicHAR(nn.Module):
         self.leak=nn.LeakyReLU()
 
         #parameters to control the max segmentation
-        self.thr=0.132
+        self.thr=0.001
         self.half_window=2
 
     def forward(self, x):
@@ -69,7 +69,7 @@ class AtomicHAR(nn.Module):
         loss_mask=torch.ones_like(forcast_loss)
         loss_mask[:,0:2]=0
         loss_mask[:,-2:]=0
-        forcast_valid=forcast_loss>0
+        forcast_valid=forcast_loss>self.thr
         forcast_valid=forcast_valid*loss_mask
         forcast_loss=forcast_loss*forcast_valid
         forcast_loss_selected=self.get_max(forcast_loss,self.half_window*2,self.half_window*2)
@@ -81,19 +81,29 @@ class AtomicHAR(nn.Module):
         additional_padding=l-l_
         if additional_padding>0:
             forcast_loss_selected_=F.pad(forcast_loss_selected_,(0,self.half_window),"constant", 0)
-
-
+        seg_points=forcast_loss_selected_>0
+        seg_point_args=torch.where(seg_points)
         # bridge_out=torch.round(bridge_out,decimals=10)
         # bridge_out=F.relu(self.lin_bridge2(bridge_out))
         
         #transformer
         #create the 20 x 20 transformer mask here
+        bs,l=seg_points.shape
+        mask=torch.zeros(bs,l,l)
+        for b in range(bs):
+            batch_args=torch.squeeze(torch.argwhere(seg_point_args[0]==b))
+            ind_intervals=seg_point_args[1][batch_args]
+            last_idx=0
+            for idx in ind_intervals:
+                mask[b,last_idx:idx,last_idx:idx]=1
+                last_idx=idx
+
         tr_input=torch.reshape(bridge_out,(seq,bs,-1))
         l,_=bridge_out.shape
         bridge_out=bridge_out.view(l,2,2)
 
 
-        # tr_out=self.transformer(tr_input)
+        tr_out=self.transformer(tr_input,src_mask=mask)
         # _,_,dim=tr_out.shape
         # tr_out=torch.reshape(tr_out,(-1,dim))
         # tr_out=tr_out.view(seq*bs,8,4)
