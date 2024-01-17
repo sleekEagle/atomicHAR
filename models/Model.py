@@ -97,6 +97,7 @@ class AtomicHAR(nn.Module):
             for idx in ind_intervals:
                 mask[b,last_idx:idx,last_idx:idx]=1
                 last_idx=idx
+            mask[b,last_idx:,last_idx:]=1
 
         tr_input=torch.reshape(bridge_out,(seq,bs,-1))
         l,_=bridge_out.shape
