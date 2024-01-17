@@ -14,16 +14,16 @@ class AtomicHAR(nn.Module):
                      dilation=1,
                      kernel_size=3,
                      stride=1).double()
-        tr_conf=conf.transformer
+        self.tr_conf=conf.transformer
         '''
         transformer input: se_len, batch_size, emb_dim
         '''
-        self.transformer=TransformerModel(d_model=tr_conf.d_model,
-                                     n_head=tr_conf.n_head,
-                                     dim_feedforward=tr_conf.dim_feedforward,
-                                     num_layers=tr_conf.num_layers,
-                                     d_out=tr_conf.d_out,
-                                     dropout=tr_conf.dropout,
+        self.transformer=TransformerModel(d_model=self.tr_conf.d_model,
+                                     n_head=self.tr_conf.n_head,
+                                     dim_feedforward=self.tr_conf.dim_feedforward,
+                                     num_layers=self.tr_conf.num_layers,
+                                     d_out=self.tr_conf.d_out,
+                                     dropout=self.tr_conf.dropout,
                                      device=0)
         self.transformer=self.transformer.double()
         self.imu_decoder=CNN_imu_decoder().double()
@@ -86,10 +86,11 @@ class AtomicHAR(nn.Module):
         # bridge_out=torch.round(bridge_out,decimals=10)
         # bridge_out=F.relu(self.lin_bridge2(bridge_out))
         
-        #transformer
+        #*******transformer***********
+
         #create the 20 x 20 transformer mask here
         bs,l=seg_points.shape
-        mask=torch.full((bs,l,l),float('-inf'))
+        mask=torch.full((bs,l,l),float('-inf'),dtype=torch.float64)
         for b in range(bs):
             batch_args=torch.squeeze(torch.argwhere(seg_point_args[0]==b))
             ind_intervals=seg_point_args[1][batch_args]
@@ -98,13 +99,16 @@ class AtomicHAR(nn.Module):
                 mask[b,last_idx:idx,last_idx:idx]=0
                 last_idx=idx
             mask[b,last_idx:,last_idx:]=0
+        # mask=torch.reshape(mask,())
+        mask=mask.repeat(self.tr_conf.n_head,1,1)
+        mask=mask.double()
 
         tr_input=torch.reshape(bridge_out,(seq,bs,-1))
         l,_=bridge_out.shape
         bridge_out=bridge_out.view(l,2,2)
 
 
-        tr_out=self.transformer(tr_input,src_mask=mask)
+        tr_out=self.transformer(tr_input,mask)
         # _,_,dim=tr_out.shape
         # tr_out=torch.reshape(tr_out,(-1,dim))
         # tr_out=tr_out.view(seq*bs,8,4)
