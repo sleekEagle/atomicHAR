@@ -89,15 +89,15 @@ class AtomicHAR(nn.Module):
         #transformer
         #create the 20 x 20 transformer mask here
         bs,l=seg_points.shape
-        mask=torch.zeros(bs,l,l)
+        mask=torch.full((bs,l,l),float('-inf'))
         for b in range(bs):
             batch_args=torch.squeeze(torch.argwhere(seg_point_args[0]==b))
             ind_intervals=seg_point_args[1][batch_args]
             last_idx=0
             for idx in ind_intervals:
-                mask[b,last_idx:idx,last_idx:idx]=1
+                mask[b,last_idx:idx,last_idx:idx]=0
                 last_idx=idx
-            mask[b,last_idx:,last_idx:]=1
+            mask[b,last_idx:,last_idx:]=0
 
         tr_input=torch.reshape(bridge_out,(seq,bs,-1))
         l,_=bridge_out.shape
