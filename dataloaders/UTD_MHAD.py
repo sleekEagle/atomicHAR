@@ -93,6 +93,11 @@ def get_curv_range(end=20000,base=2.5):
 
 
 class UTD_MHAD(Dataset):
+    '''
+    imu_mask: [bs,seq_number,dim,items_in_seq]
+            all items in a given sequence will be either valid or invalid
+            i.e the mask is sequence level (sequence level resolution)
+    '''
     def __init__(self, data_dir,
                  resample=True,
                  curvature=True,
@@ -168,7 +173,7 @@ class UTD_MHAD(Dataset):
             xyz_mask=np.zeros_like(xyz_seg_norm)
             xyz_mask[0:valid_data_seq,:,:]=1
 
-            return imu_seg_norm,xyz_seg_norm,imu_mask,xyz_mask
+            return imu_seg_norm,xyz_seg_norm,imu_mask,xyz_mask,imu_len
         
         else:
             seg=self.get_curve_segmentation(curvature)

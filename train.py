@@ -32,7 +32,7 @@ def main(conf : DictConfig) -> None:
     print(f'new lr={lr}')
     
     for epoch in range(1000):
-        mean_loss,mean_imu_loss,mean_forcast_loss=0,0,0
+        mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss=0,0,0,0
         print(f'epoch={epoch}')
 
         if (epoch+1)%10==0:
@@ -44,7 +44,7 @@ def main(conf : DictConfig) -> None:
             break
 
         for i,input in enumerate(train_dataloader):
-            imu,xyz,imu_mask,xyz_mask=input
+            imu,xyz,imu_mask,xyz_mask,imu_len=input
             #create segmentation points
             # seg=torch.zeros_like(curvature)
             # seg_len=20
@@ -68,28 +68,35 @@ def main(conf : DictConfig) -> None:
 
             optimizer.zero_grad()
 
-            output=athar_model(imu)
-
+            output=athar_model(imu,imu_mask,imu_len)
+            
             imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
             forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
                                      output['forcast']*output['forcast_mask'])
+            
+            atom_loss=MSE_loss_fn(output['atom_gen'],output['imu_segs_interp'])
+            
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=imu_loss+forcast_loss*0.1
+            loss=imu_loss+forcast_loss
+            # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
             optimizer.step()
             mean_loss+=loss.item()
             mean_imu_loss+=imu_loss.item()
             mean_forcast_loss+=forcast_loss.item()
+            mean_atom_loss+=atom_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
         mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
+        mean_atom_loss=mean_atom_loss/len(train_dataloader)
 
-        print(f'IMU loss = {mean_imu_loss:.5f}, forcast loss= {mean_forcast_loss:.5f} total loss={mean_loss:.2f}')
+        print(f'****IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
+        mean_atom_loss=0
 
     print('broke')
 
