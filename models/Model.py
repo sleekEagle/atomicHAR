@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from models.Encoder import CNN,Linear_encoder
+from models.Encoder import CNN,Linear_encoder,Atom_encoder_CNN
 from models.Transformer import TransformerModel
 from models.Decoder import CNN_imu_decoder,CNN_atom_decoder
 import torch
@@ -28,6 +28,7 @@ class AtomicHAR(nn.Module):
         self.transformer=self.transformer.double()
         self.imu_decoder=CNN_imu_decoder().double()
         self.atom_decoder=CNN_atom_decoder().double()
+        self.atom_encoder=Atom_encoder_CNN().double()
 
         self.lin_bridge1 = nn.Linear(32*2, 4).double()
         self.lin_bridge2 = nn.Linear(32, 32).double()
@@ -40,6 +41,8 @@ class AtomicHAR(nn.Module):
         self.thr=0.001
         self.half_window=2
         self.imu_resample_len=20
+        #maximum length of an atom in number of segments
+        self.max_atom_len=10
 
     def forward(self, x,imu_mask,imu_len):
         #encooding
@@ -125,32 +128,47 @@ class AtomicHAR(nn.Module):
 
         #*******transformer*********************************************************
         #create the 20 x 20 transformer mask here
-        bs,l=seg_points.shape
-        mask=torch.empty(0)
-        for b in range(bs):
-            mask_=torch.full((1,l,l),float('-inf'),dtype=torch.float64)
-            ind_intervals=seg_len_list[b]
-            last_idx=0
-            for idx in ind_intervals:
-                mask_[0,last_idx:(last_idx+idx),last_idx:(last_idx+idx)]=0
-                last_idx+=idx
-            mask_=mask_.repeat(self.tr_conf.n_head,1,1)
-            mask=torch.cat((mask,mask_),dim=0)
-        mask_.repeat(self.tr_conf.n_head,1,1)
-        mask=mask.double()
+        # bs,l=seg_points.shape
+        # mask=torch.empty(0)
+        # for b in range(bs):
+        #     mask_=torch.full((1,l,l),float('-inf'),dtype=torch.float64)
+        #     ind_intervals=seg_len_list[b]
+        #     last_idx=0
+        #     for idx in ind_intervals:
+        #         mask_[0,last_idx:(last_idx+idx),last_idx:(last_idx+idx)]=0
+        #         last_idx+=idx
+        #     mask_=mask_.repeat(self.tr_conf.n_head,1,1)
+        #     mask=torch.cat((mask,mask_),dim=0)
+        # mask_.repeat(self.tr_conf.n_head,1,1)
+        # mask=mask.double()
 
-        tr_input=torch.reshape(bridge_out,(seq,bs,-1))
+        bridge_out_tr=torch.reshape(bridge_out,(seq,bs,-1))
+        seg_featurs=torch.empty(0)
+        for b in range(bs): 
+            b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
+            b_seg_points=list(b_seg_points.numpy())
+            last_index=0
+            for sp in b_seg_points:
+                padding=self.max_atom_len-(sp-last_index)
+                feat=bridge_out_tr[last_index:sp,b,:]
+                feat=F.pad(feat,(0,0,padding,0),"constant", 0)
+                feat=torch.unsqueeze(feat,dim=0)
+                seg_featurs=torch.cat((seg_featurs,feat),dim=0)
+        seg_featurs=torch.swapaxes(seg_featurs,1,2)
+
+        atom_emb=self.atom_encoder(seg_featurs)
+
         l,_=bridge_out.shape
         bridge_out=bridge_out.view(l,2,2)
 
-        tr_out=self.transformer(tr_input)
+        # tr_out=self.transformer(tr_input)
 
-        imu_segs_interp,b_embeddings_list=torch.empty(0),torch.empty(0)
+        imu_segs_interp=torch.empty(0)
+        # b_embeddings_list=torch.empty(0)
         for b in range(bs):            
-            b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
-
-            b_embeddings=tr_out[(b_seg_points-1).long(),b,:]
-            b_embeddings_list=torch.cat((b_embeddings_list,b_embeddings),dim=0)
+            # b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
+            # b_embeddings=tr_out[(b_seg_points-1).long(),b,:]
+            # b_embeddings_list=torch.cat((b_embeddings_list,b_embeddings),dim=0)
             #get imu segments that corresponds to the segments
             imu_segs=torch.split(x[b,:int(imu_last_seg[b].item()),:,:],seg_len_list[b],dim=0)
             imu_segs=[torch.reshape(item,(dim,-1)) for item in imu_segs]
@@ -168,9 +186,9 @@ class AtomicHAR(nn.Module):
         #**********************************************************************************************
 
         #IMU decoder: atomic level*********************************************************************
-        n_atoms,dim=b_embeddings_list.shape  
-        atom_in=torch.reshape(b_embeddings_list,(n_atoms,4,8))
-        atom_gen=self.atom_decoder(atom_in)
+        n_seg,_=atom_emb.shape
+        atom_decoder_in=torch.reshape(atom_emb,(n_seg,4,4))
+        atom_gen=self.atom_decoder(atom_decoder_in)
         #**********************************************************************************************
 
         output={}

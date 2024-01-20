@@ -37,3 +37,25 @@ class Linear_encoder(nn.Module):
     def forward(self, x):
         x=F.relu(self.fc1(x))
         return x
+    
+
+class Atom_encoder_CNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # padding=get_padding(input_size,dilation,kernel_size,stride)
+        self.conv1 = nn.Conv1d(4, 16, 
+                               kernel_size=3,
+                               stride=2,
+                               padding=0)
+        # self.pool = nn.MaxPool1d(2, 2)
+        self.conv2 = nn.Conv1d(16, 16, kernel_size=3,
+                               stride=2,
+                               padding=0)
+        self.conv3 = nn.Conv1d(32, 32, kernel_size=3,
+                                stride=1,
+                                padding=0)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        return x[:,:,0]

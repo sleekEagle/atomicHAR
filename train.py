@@ -77,7 +77,7 @@ def main(conf : DictConfig) -> None:
             atom_loss=MSE_loss_fn(output['atom_gen'],output['imu_segs_interp'])
             
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=imu_loss+forcast_loss
+            loss=imu_loss+forcast_loss+atom_loss
             # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
