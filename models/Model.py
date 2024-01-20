@@ -161,23 +161,7 @@ class AtomicHAR(nn.Module):
         l,_=bridge_out.shape
         bridge_out=bridge_out.view(l,2,2)
 
-        # tr_out=self.transformer(tr_input)
-
-        imu_segs_interp=torch.empty(0)
-        # b_embeddings_list=torch.empty(0)
-        for b in range(bs):            
-            # b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
-            # b_embeddings=tr_out[(b_seg_points-1).long(),b,:]
-            # b_embeddings_list=torch.cat((b_embeddings_list,b_embeddings),dim=0)
-            #get imu segments that corresponds to the segments
-            imu_segs=torch.split(x[b,:int(imu_last_seg[b].item()),:,:],seg_len_list[b],dim=0)
-            imu_segs=[torch.reshape(item,(dim,-1)) for item in imu_segs]
-
-            #resample the imu segments to a fixed size
-            for seg in imu_segs:
-                interp_seg=torch.nn.functional.interpolate(
-                    torch.unsqueeze(seg,dim=0),size=20)
-                imu_segs_interp=torch.cat((imu_segs_interp,interp_seg),dim=0)        
+        # tr_out=self.transformer(tr_input)      
 
         #IMU decoder: segment level*******************************************************************
         imu_gen=self.imu_decoder(bridge_out)
@@ -194,7 +178,7 @@ class AtomicHAR(nn.Module):
         output={}
         output['imu_gen']=imu_gen
         output['atom_gen']=atom_gen
-        output['imu_segs_interp']=imu_segs_interp
+        output['imu_last_seg']=imu_last_seg
         output['seg_len_list']=seg_len_list
         output['bridge_out']=bridge_out
         output['forcast_real']=forcast_in

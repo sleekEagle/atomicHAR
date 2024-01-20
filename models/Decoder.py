@@ -29,9 +29,9 @@ class CNN_imu_decoder(nn.Module):
 class CNN_atom_decoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.tconv1 = nn.ConvTranspose1d(4, 4, 4,dilation=2)
-        self.tconv2 = nn.ConvTranspose1d(4, 6, 4,dilation=2)
-        self.tconv3 = nn.ConvTranspose1d(6, 6, 5)
+        self.tconv1 = nn.ConvTranspose1d(4, 4, 5,dilation=3)
+        self.tconv2 = nn.ConvTranspose1d(4, 6, 5,dilation=3)
+        self.tconv3 = nn.ConvTranspose1d(6, 6, 5,dilation=3)
 
     def forward(self, x):
         out=F.relu(self.tconv1(x))

@@ -10,10 +10,30 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
+import matplotlib.pyplot as plt
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
+
+def get_imu_segments(imu,imu_last_seg,seg_len_list):
+    bs,_,dim,_=imu.shape
+    imu_segs_interp=torch.empty(0)
+    # b_embeddings_list=torch.empty(0)
+    for b in range(bs):            
+        # b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
+        # b_embeddings=tr_out[(b_seg_points-1).long(),b,:]
+        # b_embeddings_list=torch.cat((b_embeddings_list,b_embeddings),dim=0)
+        #get imu segments that corresponds to the segments
+        imu_segs=torch.split(imu[b,:int(imu_last_seg[b].item()),:,:],seg_len_list[b],dim=0)
+        imu_segs=[torch.reshape(item,(dim,-1)) for item in imu_segs]
+
+        #resample the imu segments to a fixed size
+        for seg in imu_segs:
+            interp_seg=torch.nn.functional.interpolate(
+                torch.unsqueeze(seg,dim=0),size=40)
+            imu_segs_interp=torch.cat((imu_segs_interp,interp_seg),dim=0)  
+    return imu_segs_interp
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
@@ -30,7 +50,7 @@ def main(conf : DictConfig) -> None:
 
     lr=get_lr(optimizer)
     print(f'new lr={lr}')
-    
+    w_atom=0
     for epoch in range(1000):
         mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss=0,0,0,0
         print(f'epoch={epoch}')
@@ -40,8 +60,9 @@ def main(conf : DictConfig) -> None:
             scheduler.step()
             lr=get_lr(optimizer)
             print(f'new lr={lr}')
-        if(epoch==200):
-            break
+
+        if epoch==100:
+            w_atom=1
 
         for i,input in enumerate(train_dataloader):
             imu,xyz,imu_mask,xyz_mask,imu_len=input
@@ -69,15 +90,16 @@ def main(conf : DictConfig) -> None:
             optimizer.zero_grad()
 
             output=athar_model(imu,imu_mask,imu_len)
+            imu_segs_interp=get_imu_segments(imu,output['imu_last_seg'],output['seg_len_list'])
             
             imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
             forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
                                      output['forcast']*output['forcast_mask'])
             
-            atom_loss=MSE_loss_fn(output['atom_gen'],output['imu_segs_interp'])
+            atom_loss=MSE_loss_fn(output['atom_gen'],imu_segs_interp)
             
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=imu_loss+forcast_loss+atom_loss
+            loss=forcast_loss+atom_loss*w_atom+imu_loss
             # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
@@ -116,4 +138,22 @@ def main(conf : DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+# output['imu_segs_interp']
+# output['seg_len_list']
+# b=0
+# imu_=imu[b,:7,:,:]
+# imu_=torch.reshape(imu_,(6,-1))
+# imu_int=torch.nn.functional.interpolate(torch.unsqueeze(imu_,0),(20))[0]
+# imu_segs=output['imu_segs_interp'][:2,:,:]
+# imu_segs=torch.reshape(imu_segs,(6,40))
+# imu_segs_int=torch.nn.functional.interpolate(torch.unsqueeze(imu_segs,0),(20))[0]
+
+
+# plt.plot(imu_int[0,:].numpy())
+# plt.plot(imu_segs_int[0,:].numpy())
+
+
 
