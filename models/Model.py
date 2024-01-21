@@ -47,15 +47,37 @@ class AtomicHAR(nn.Module):
     def forward(self, x,imu_mask,imu_len):
         #encooding
         bs,seq,dim,l=x.shape
+        '''
+        x.shape = [bs,seq,6,20]
+        imu_input.shape = [bs*seq,6,20]
+        imu_input:
+        [ x[0,seq,6,20] , 
+          x[1,seq,6,20] ,  
+          x[2,seq,6,20] ] 
+                        
+        '''
         imu_input=torch.reshape(x,(-1,dim,l))
         cnn_out=self.cnn(imu_input)
         l,_,_=cnn_out.shape
         cnn_out=cnn_out.view(l,-1)
         bridge_out=F.sigmoid(self.lin_bridge1(cnn_out))
+        '''
+        shape of bridge_out:
+        bd : dimention of bridge dimention
+        [ [bd][bd]....  [bd][bd]....  [bd][bd]....  ]
+            seq            seq          seq   ....bs number
+        '''
 
         #**********forcasting the next sequence*********************************
         #forcasting
         forcast_in=torch.reshape(bridge_out,(bs,seq,-1))
+        '''
+        forcast_in.shape = [bs,seq,bd]
+        [ [[bd][bd]...seq number] ,
+          [[bd][bd]...seq number] ,
+          [[bd][bd]...seq number] 
+          ...bs number ]
+        '''
         forcast_in_shft=F.pad(forcast_in,(0,0,1,0),"constant",0)
         forcast_in_shft=forcast_in_shft[:,0:-1,:]
         #forcasting mask. mask the first and the last items in the sequence
@@ -70,12 +92,24 @@ class AtomicHAR(nn.Module):
         forcast_mask=forcast_mask*imu_mask_
         
         forcast_in=torch.reshape(forcast_in,(-1,d))
+        '''
+        forcast_in.shape = [bs*seq, bd]
+        [[bd][bd]...seq number [bd][bd]...seq number [bd][bd]...seq number]
+        [bd][bd]...seq number times bs
+        '''
         forcast_in_shft=torch.reshape(forcast_in_shft,(-1,d))
 
         #forcast the next step and calculate the loss
         forcast=self.lin_forcast(forcast_in_shft)
         forcast_loss=torch.mean(torch.square(forcast*forcast_mask-forcast_in*forcast_mask),dim=1)
         forcast_loss=torch.reshape(forcast_loss,(bs,seq))
+        '''
+        forcast_loss.shape=[bs,seq]
+        [loss, loss, loss, loss ......seq number,
+        loss, loss, loss, loss ......seq number,
+        loss, loss, loss, loss ......seq number,
+        ......bs number]
+        '''
         #************************************************************************
 
         #find segment points using forcast loss**********************************
@@ -142,7 +176,15 @@ class AtomicHAR(nn.Module):
         # mask_.repeat(self.tr_conf.n_head,1,1)
         # mask=mask.double()
 
-        bridge_out_tr=torch.reshape(bridge_out,(seq,bs,-1))
+        bridge_out_tr=torch.reshape(bridge_out,(bs,seq,-1))
+        '''
+        bridge_out_tr.shape = [bs, seq, bd]
+        [ [bd][bd][bd][bd][bd].....seq number ,
+          [bd][bd][bd][bd][bd].....seq number ,
+          [bd][bd][bd][bd][bd].....seq number ,
+          [bd][bd][bd][bd][bd].....seq number ,
+          ........ bs number]
+        '''
         seg_featurs=torch.empty(0)
         for b in range(bs): 
             b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
@@ -150,12 +192,12 @@ class AtomicHAR(nn.Module):
             last_index=0
             for sp in b_seg_points:
                 padding=self.max_atom_len-(sp-last_index)
-                feat=bridge_out_tr[last_index:sp,b,:]
+                feat=bridge_out_tr[b,last_index:sp,:]
                 feat=F.pad(feat,(0,0,padding,0),"constant", 0)
                 feat=torch.unsqueeze(feat,dim=0)
                 seg_featurs=torch.cat((seg_featurs,feat),dim=0)
-        seg_featurs=torch.swapaxes(seg_featurs,1,2)
 
+        seg_featurs=torch.swapaxes(seg_featurs,1,2)
         atom_emb=self.atom_encoder(seg_featurs)
 
         l,_=bridge_out.shape

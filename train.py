@@ -26,12 +26,17 @@ def get_imu_segments(imu,imu_last_seg,seg_len_list):
         # b_embeddings_list=torch.cat((b_embeddings_list,b_embeddings),dim=0)
         #get imu segments that corresponds to the segments
         imu_segs=torch.split(imu[b,:int(imu_last_seg[b].item()),:,:],seg_len_list[b],dim=0)
-        imu_segs=[torch.reshape(item,(dim,-1)) for item in imu_segs]
+        imu_comb_list=[]
+        for i in range(len(imu_segs)):
+            t=imu_segs[i]
+            t_splt=torch.split(t,1,dim=0)
+            imu_comb=torch.cat(t_splt,dim=2)[0]
+            imu_comb_list.append(imu_comb)
 
         #resample the imu segments to a fixed size
-        for seg in imu_segs:
+        for attom in imu_comb_list:
             interp_seg=torch.nn.functional.interpolate(
-                torch.unsqueeze(seg,dim=0),size=40)
+                torch.unsqueeze(attom,dim=0),size=40)
             imu_segs_interp=torch.cat((imu_segs_interp,interp_seg),dim=0)  
     return imu_segs_interp
 
@@ -44,13 +49,13 @@ def main(conf : DictConfig) -> None:
 
     athar_model=AtomicHAR(conf.utdmhad.model)
     MSE_loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.0001)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
 
 
     lr=get_lr(optimizer)
     print(f'new lr={lr}')
-    w_atom=0
+    w_atom=1
     for epoch in range(1000):
         mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss=0,0,0,0
         print(f'epoch={epoch}')
@@ -99,7 +104,7 @@ def main(conf : DictConfig) -> None:
             atom_loss=MSE_loss_fn(output['atom_gen'],imu_segs_interp)
             
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=forcast_loss+atom_loss*w_atom+imu_loss
+            loss=forcast_loss+atom_loss+imu_loss
             # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
