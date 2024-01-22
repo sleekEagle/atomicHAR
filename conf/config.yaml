@@ -6,7 +6,6 @@ data:
   dataset: utdmhad
   num_sensors: 6
 
-
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
   imu_seg: True

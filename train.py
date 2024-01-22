@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import matplotlib.pyplot as plt
+import wandb
+wandb.login()
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -43,13 +45,19 @@ def get_imu_segments(imu,imu_last_seg,seg_len_list):
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf : DictConfig) -> None:
-    print(conf.utdmhad.path)
+    wandb_conf = OmegaConf.to_container(
+        conf, resolve=True, throw_on_missing=True
+    )
+    wandb.init(project="atomicHAR",
+               config=wandb_conf,
+               )
+
     train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     print('dataloaders obtained...')
 
     athar_model=AtomicHAR(conf.utdmhad.model)
     MSE_loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
 
 
@@ -71,26 +79,6 @@ def main(conf : DictConfig) -> None:
 
         for i,input in enumerate(train_dataloader):
             imu,xyz,imu_mask,xyz_mask,imu_len=input
-            #create segmentation points
-            # seg=torch.zeros_like(curvature)
-            # seg_len=20
-            # seg[:,0::seg_len]=1
-            # seg[:,0]=0
-
-            # split_imu=torch.split(imu,20,dim=2)
-            # imu_chunks=torch.split(imu,20,dim=-1)
-            # imu_chunks=torch.stack(imu_chunks)
-            # imu_chunks=torch.swapaxes(imu_chunks,0,1)
-            # bs,seq,dim,len=imu_chunks.shape
-            # imu_chunks=imu_chunks.reshape(-1,dim,len)
-            # imu_x_chunks=imu_chunks[:,0,:]
-
-            # curvature=curvature/100.0
-            # print(imu.shape)
-            # result=cnn(imu)
-            # print(result.shape)
-            # src = torch.rand(10, 13, 512)
-            # tr_out=transformer(src)
 
             optimizer.zero_grad()
 
@@ -120,10 +108,14 @@ def main(conf : DictConfig) -> None:
         mean_atom_loss=mean_atom_loss/len(train_dataloader)
 
         print(f'****IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
+        wandb.log({"IMU_loss": mean_imu_loss,
+            "forcast_loss": mean_forcast_loss,
+            "atom loss":mean_atom_loss})
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
         mean_atom_loss=0
+
 
     print('broke')
 
