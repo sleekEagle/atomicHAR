@@ -42,6 +42,19 @@ def get_imu_segments(imu,imu_last_seg,seg_len_list):
             imu_segs_interp=torch.cat((imu_segs_interp,interp_seg),dim=0)  
     return imu_segs_interp
 
+def plot_seg(imu,seg_len_list):
+    b,seq,dim,l=imu.shape
+    t=imu[0]
+    t_ex=[item for item in t]
+    d=torch.cat(t_ex,dim=1)
+    d=torch.swapaxes(d,0,1)
+    plt.plot(d)
+    seg_ind=torch.tensor(seg_len_list[0])
+    seg=torch.zeros(seq*l)
+    seg[seg_ind*20]=1
+    plt.plot(seg)
+    wandb.log({"segmentation": plt})
+
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf : DictConfig) -> None:
@@ -107,15 +120,17 @@ def main(conf : DictConfig) -> None:
         mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
         mean_atom_loss=mean_atom_loss/len(train_dataloader)
 
-        print(f'****IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
+        print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
         wandb.log({"IMU_loss": mean_imu_loss,
             "forcast_loss": mean_forcast_loss,
             "atom loss":mean_atom_loss})
+        plot_seg(imu,output['seg_len_list'])
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
         mean_atom_loss=0
 
+        
 
     print('broke')
 
