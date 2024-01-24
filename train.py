@@ -77,6 +77,7 @@ def main(conf : DictConfig) -> None:
     lr=get_lr(optimizer)
     print(f'new lr={lr}')
     w_atom=1
+    min_loss=100
     for epoch in range(1000):
         mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss=0,0,0,0
         print(f'epoch={epoch}')
@@ -105,7 +106,7 @@ def main(conf : DictConfig) -> None:
             atom_loss=MSE_loss_fn(output['atom_gen'],imu_segs_interp)
             
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=forcast_loss+atom_loss+imu_loss
+            loss=forcast_loss+atom_loss*0.0+imu_loss
             # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
@@ -119,6 +120,10 @@ def main(conf : DictConfig) -> None:
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
         mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
         mean_atom_loss=mean_atom_loss/len(train_dataloader)
+        if mean_loss<min_loss:
+            print('saving model...')
+            min_loss=mean_loss
+            torch.save(athar_model.state_dict(),conf.model.save_path)
 
         print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
         wandb.log({"IMU_loss": mean_imu_loss,
