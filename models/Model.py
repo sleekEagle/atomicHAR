@@ -38,7 +38,7 @@ class AtomicHAR(nn.Module):
         self.leak=nn.LeakyReLU()
 
         #parameters to control the max segmentation
-        self.thr=0.001
+        self.thr=0.0001
         self.half_window=2
         self.imu_resample_len=20
         #maximum length of an atom in number of segments
@@ -102,6 +102,10 @@ class AtomicHAR(nn.Module):
         #forcast the next step and calculate the loss
         forcast=self.lin_forcast(forcast_in_shft)
         forcast_loss=torch.mean(torch.square(forcast*forcast_mask-forcast_in*forcast_mask),dim=1)
+        #select forcast loss threshold dynamically
+        sorted, indices=torch.sort(forcast_loss)
+        l=int(sorted.shape[0]*0.9)
+        forcast_loss_thr=sorted[l].item()
         forcast_loss=torch.reshape(forcast_loss,(bs,seq))
         '''
         forcast_loss.shape=[bs,seq]
@@ -110,16 +114,17 @@ class AtomicHAR(nn.Module):
         loss, loss, loss, loss ......seq number,
         ......bs number]
         '''
+        
         #************************************************************************
 
         #find segment points using forcast loss**********************************
         loss_mask=torch.ones_like(forcast_loss)
         loss_mask[:,0:2]=0
         loss_mask[:,-2:]=0
-        forcast_valid=forcast_loss>self.thr
+        forcast_valid=forcast_loss>forcast_loss_thr
         forcast_valid=forcast_valid*loss_mask
-        forcast_loss=forcast_loss*forcast_valid
-        forcast_loss_selected=self.get_max(forcast_loss,self.half_window*2,self.half_window*2)
+        forcast_loss_=forcast_loss*forcast_valid
+        forcast_loss_selected=self.get_max(forcast_loss_,self.half_window*2,self.half_window*2)
         forcast_loss_second=forcast_loss_selected[:,self.half_window:]
         forcast_loss_selected_=self.get_max(forcast_loss_second,self.half_window*2,self.half_window*2)
         forcast_loss_selected_=F.pad(forcast_loss_selected_,(self.half_window,0),"constant", 0)
