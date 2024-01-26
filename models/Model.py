@@ -25,14 +25,20 @@ class AtomicHAR(nn.Module):
                                      d_out=self.tr_conf.d_out,
                                      dropout=self.tr_conf.dropout,
                                      device=0)
+        self.imu_feat_dim=conf.cnn.imu_feat_dim
+        self.imu_decorder_in_channels=int(self.imu_feat_dim/4)
+        forcast_hidden=conf.forcast.hidden_dim
+
         self.transformer=self.transformer.double()
-        self.imu_decoder=CNN_imu_decoder().double()
+        self.imu_decoder=CNN_imu_decoder(self.imu_decorder_in_channels).double()
         self.atom_decoder=CNN_atom_decoder().double()
         self.atom_encoder=Atom_encoder_CNN().double()
 
-        self.lin_bridge1 = nn.Linear(32*2, 4).double()
-        self.lin_bridge2 = nn.Linear(32, 32).double()
-        self.lin_forcast=nn.Linear(4,4).double()
+        
+        self.lin_bridge1 = nn.Linear(32*2, self.imu_feat_dim).double()
+        self.lin_forcast1=nn.Linear(self.imu_feat_dim,forcast_hidden).double()
+        self.lin_forcast2=nn.Linear(forcast_hidden,self.imu_feat_dim).double()
+        self.lin_forcast3=nn.Linear(forcast_hidden,self.imu_feat_dim).double()
 
         self.encoder=Linear_encoder().double()
         self.leak=nn.LeakyReLU()
@@ -100,12 +106,19 @@ class AtomicHAR(nn.Module):
         forcast_in_shft=torch.reshape(forcast_in_shft,(-1,d))
 
         #forcast the next step and calculate the loss
-        forcast=self.lin_forcast(forcast_in_shft)
+        #**********read!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        #check is the forcast loss goes down to 0.00004 level
+        #change the number of layers. this this is achieved consistantly. 
+        #now the convergence is pretty noisy.
+
+        forcast_feat=F.relu(self.lin_forcast1(forcast_in_shft))
+        forcast=self.lin_forcast2(forcast_feat)
+
         forcast_loss=torch.mean(torch.square(forcast*forcast_mask-forcast_in*forcast_mask),dim=1)
         #select forcast loss threshold dynamically
-        sorted, indices=torch.sort(forcast_loss)
-        l=int(sorted.shape[0]*0.9)
-        forcast_loss_thr=sorted[l].item()
+        # sorted, indices=torch.sort(forcast_loss)
+        # l=int(sorted.shape[0]*0.9)
+        # forcast_loss_thr=sorted[l].item()
         forcast_loss=torch.reshape(forcast_loss,(bs,seq))
         '''
         forcast_loss.shape=[bs,seq]
@@ -118,50 +131,50 @@ class AtomicHAR(nn.Module):
         #************************************************************************
 
         #find segment points using forcast loss**********************************
-        loss_mask=torch.ones_like(forcast_loss)
-        loss_mask[:,0:2]=0
-        loss_mask[:,-2:]=0
-        forcast_valid=forcast_loss>forcast_loss_thr
-        forcast_valid=forcast_valid*loss_mask
-        forcast_loss_=forcast_loss*forcast_valid
-        forcast_loss_selected=self.get_max(forcast_loss_,self.half_window*2,self.half_window*2)
-        forcast_loss_second=forcast_loss_selected[:,self.half_window:]
-        forcast_loss_selected_=self.get_max(forcast_loss_second,self.half_window*2,self.half_window*2)
-        forcast_loss_selected_=F.pad(forcast_loss_selected_,(self.half_window,0),"constant", 0)
-        bs,l=forcast_loss_selected.shape
-        _,l_=forcast_loss_selected_.shape
-        additional_padding=l-l_
-        if additional_padding>0:
-            forcast_loss_selected_=F.pad(forcast_loss_selected_,(0,self.half_window),"constant", 0)
-        seg_points=forcast_loss_selected_>0
-        seg_point_args=torch.where(seg_points)
+        # loss_mask=torch.ones_like(forcast_loss)
+        # loss_mask[:,0:2]=0
+        # loss_mask[:,-2:]=0
+        # forcast_valid=forcast_loss>forcast_loss_thr
+        # forcast_valid=forcast_valid*loss_mask
+        # forcast_loss_=forcast_loss*forcast_valid
+        # forcast_loss_selected=self.get_max(forcast_loss_,self.half_window*2,self.half_window*2)
+        # forcast_loss_second=forcast_loss_selected[:,self.half_window:]
+        # forcast_loss_selected_=self.get_max(forcast_loss_second,self.half_window*2,self.half_window*2)
+        # forcast_loss_selected_=F.pad(forcast_loss_selected_,(self.half_window,0),"constant", 0)
+        # bs,l=forcast_loss_selected.shape
+        # _,l_=forcast_loss_selected_.shape
+        # additional_padding=l-l_
+        # if additional_padding>0:
+        #     forcast_loss_selected_=F.pad(forcast_loss_selected_,(0,self.half_window),"constant", 0)
+        # seg_points=forcast_loss_selected_>0
+        # seg_point_args=torch.where(seg_points)
 
         #obtain segmentation points per each batch
-        imu_last_seg=torch.round(imu_len/seq)
-        seg_len_list=[]
-        for b in range(bs):
-            b_arg=torch.argwhere(seg_point_args[0]==b)[:,0]
-            b_seg_points=seg_point_args[1][b_arg]
-            b_seg_points=torch.cat((torch.zeros(1),
-                                    b_seg_points,
-                                    torch.unsqueeze(imu_last_seg[b],dim=0)),dim=0)
-            seg_lens=torch.diff(b_seg_points).numpy()
-            seg_lens=list(seg_lens)
-            seg_lens=[int(item) for item in seg_lens]
-            #combine nearby segments if one of them is too short
-            seg_lens_mod=[]
-            i=0
-            while i<len(seg_lens):
-                len_sum=seg_lens[i]
-                for j in range(i+1,len(seg_lens)):
-                    if seg_lens[j]>1:
-                        break
-                    else:
-                        i+=1
-                        len_sum+=seg_lens[j]
-                i+=1
-                seg_lens_mod.append(len_sum)
-            seg_len_list.append(seg_lens_mod)
+        # imu_last_seg=torch.round(imu_len/seq)
+        # seg_len_list=[]
+        # for b in range(bs):
+        #     b_arg=torch.argwhere(seg_point_args[0]==b)[:,0]
+        #     b_seg_points=seg_point_args[1][b_arg]
+        #     b_seg_points=torch.cat((torch.zeros(1),
+        #                             b_seg_points,
+        #                             torch.unsqueeze(imu_last_seg[b],dim=0)),dim=0)
+        #     seg_lens=torch.diff(b_seg_points).numpy()
+        #     seg_lens=list(seg_lens)
+        #     seg_lens=[int(item) for item in seg_lens]
+        #     #combine nearby segments if one of them is too short
+        #     seg_lens_mod=[]
+        #     i=0
+        #     while i<len(seg_lens):
+        #         len_sum=seg_lens[i]
+        #         for j in range(i+1,len(seg_lens)):
+        #             if seg_lens[j]>1:
+        #                 break
+        #             else:
+        #                 i+=1
+        #                 len_sum+=seg_lens[j]
+        #         i+=1
+        #         seg_lens_mod.append(len_sum)
+        #     seg_len_list.append(seg_lens_mod)
         #***************************************************************************
                 
 
@@ -181,7 +194,7 @@ class AtomicHAR(nn.Module):
         # mask_.repeat(self.tr_conf.n_head,1,1)
         # mask=mask.double()
 
-        bridge_out_tr=torch.reshape(bridge_out,(bs,seq,-1))
+        # bridge_out_tr=torch.reshape(bridge_out,(bs,seq,-1))
         '''
         bridge_out_tr.shape = [bs, seq, bd]
         [ [bd][bd][bd][bd][bd].....seq number ,
@@ -190,23 +203,23 @@ class AtomicHAR(nn.Module):
           [bd][bd][bd][bd][bd].....seq number ,
           ........ bs number]
         '''
-        seg_featurs=torch.empty(0)
-        for b in range(bs): 
-            b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
-            b_seg_points=list(b_seg_points.numpy())
-            last_index=0
-            for sp in b_seg_points:
-                padding=self.max_atom_len-(sp-last_index)
-                feat=bridge_out_tr[b,last_index:sp,:]
-                feat=F.pad(feat,(0,0,padding,0),"constant", 0)
-                feat=torch.unsqueeze(feat,dim=0)
-                seg_featurs=torch.cat((seg_featurs,feat),dim=0)
+        # seg_featurs=torch.empty(0)
+        # for b in range(bs): 
+        #     b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
+        #     b_seg_points=list(b_seg_points.numpy())
+        #     last_index=0
+        #     for sp in b_seg_points:
+        #         padding=self.max_atom_len-(sp-last_index)
+        #         feat=bridge_out_tr[b,last_index:sp,:]
+        #         feat=F.pad(feat,(0,0,padding,0),"constant", 0)
+        #         feat=torch.unsqueeze(feat,dim=0)
+        #         seg_featurs=torch.cat((seg_featurs,feat),dim=0)
 
-        seg_featurs=torch.swapaxes(seg_featurs,1,2)
-        atom_emb=self.atom_encoder(seg_featurs)
+        # seg_featurs=torch.swapaxes(seg_featurs,1,2)
+        # atom_emb=self.atom_encoder(seg_featurs)
 
-        l,_=bridge_out.shape
-        bridge_out=bridge_out.view(l,2,2)
+        # l,_=bridge_out.shape
+        bridge_out=bridge_out.view(l,self.imu_decorder_in_channels,4)
 
         # tr_out=self.transformer(tr_input)      
 
@@ -217,16 +230,16 @@ class AtomicHAR(nn.Module):
         #**********************************************************************************************
 
         #IMU decoder: atomic level*********************************************************************
-        n_seg,_=atom_emb.shape
-        atom_decoder_in=torch.reshape(atom_emb,(n_seg,4,4))
-        atom_gen=self.atom_decoder(atom_decoder_in)
+        # n_seg,_=atom_emb.shape
+        # atom_decoder_in=torch.reshape(atom_emb,(n_seg,4,4))
+        # atom_gen=self.atom_decoder(atom_decoder_in)
         #**********************************************************************************************
 
         output={}
         output['imu_gen']=imu_gen
-        output['atom_gen']=atom_gen
-        output['imu_last_seg']=imu_last_seg
-        output['seg_len_list']=seg_len_list
+        # output['atom_gen']=atom_gen
+        # output['imu_last_seg']=imu_last_seg
+        # output['seg_len_list']=seg_len_list
         output['bridge_out']=bridge_out
         output['forcast_real']=forcast_in
         output['forcast']=forcast

@@ -14,10 +14,10 @@ class Linear_decoder(nn.Module):
     
 
 class CNN_imu_decoder(nn.Module):
-    def __init__(self):
+    def __init__(self,in_channels):
         super().__init__()
-        self.tconv1 = nn.ConvTranspose1d(2, 2, 5)
-        self.tconv2 = nn.ConvTranspose1d(2, 6, 5, dilation=2)
+        self.tconv1 = nn.ConvTranspose1d(in_channels, 4, 5)
+        self.tconv2 = nn.ConvTranspose1d(4, 6, 4, dilation=2)
         self.tconv3 = nn.ConvTranspose1d(6, 6, 4, dilation=2)
 
     def forward(self, x):

@@ -10,9 +10,8 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
-import matplotlib.pyplot as plt
-import wandb
-wandb.login()
+# import wandb
+# wandb.login()
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -61,9 +60,9 @@ def main(conf : DictConfig) -> None:
     wandb_conf = OmegaConf.to_container(
         conf, resolve=True, throw_on_missing=True
     )
-    wandb.init(project="atomicHAR",
-               config=wandb_conf,
-               )
+    # wandb.init(project="atomicHAR",
+    #            config=wandb_conf,
+    #            )
 
     train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     print('dataloaders obtained...')
@@ -97,16 +96,16 @@ def main(conf : DictConfig) -> None:
             optimizer.zero_grad()
 
             output=athar_model(imu,imu_mask,imu_len)
-            imu_segs_interp=get_imu_segments(imu,output['imu_last_seg'],output['seg_len_list'])
+            # imu_segs_interp=get_imu_segments(imu,output['imu_last_seg'],output['seg_len_list'])
             
             imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
             forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
                                      output['forcast']*output['forcast_mask'])
             
-            atom_loss=MSE_loss_fn(output['atom_gen'],imu_segs_interp)
+            # atom_loss=MSE_loss_fn(output['atom_gen'],imu_segs_interp)
             
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=forcast_loss+atom_loss*0.0+imu_loss
+            loss=forcast_loss+imu_loss
             # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
@@ -114,7 +113,7 @@ def main(conf : DictConfig) -> None:
             mean_loss+=loss.item()
             mean_imu_loss+=imu_loss.item()
             mean_forcast_loss+=forcast_loss.item()
-            mean_atom_loss+=atom_loss.item()
+            # mean_atom_loss+=atom_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
@@ -126,10 +125,10 @@ def main(conf : DictConfig) -> None:
             torch.save(athar_model.state_dict(),conf.model.save_path)
 
         print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
-        wandb.log({"IMU_loss": mean_imu_loss,
-            "forcast_loss": mean_forcast_loss,
-            "atom loss":mean_atom_loss})
-        plot_seg(imu,output['seg_len_list'])
+        # wandb.log({"IMU_loss": mean_imu_loss,
+        #     "forcast_loss": mean_forcast_loss,
+        #     "atom loss":mean_atom_loss})
+        # plot_seg(imu,output['seg_len_list'])
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0

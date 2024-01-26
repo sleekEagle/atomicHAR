@@ -29,3 +29,7 @@ utdmhad:
       d_out: 32
     cnn:
       in_channels: 6
+      #imu_feat_dim must be divisible by 4
+      imu_feat_dim: 32
+    forcast:
+      hidden_dim: 32
