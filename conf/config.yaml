@@ -1,12 +1,10 @@
-db:
-  driver: mysql
-  user: omry
-  pass: secret
 data:
   dataset: utdmhad
   num_sensors: 6
+
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\model.pth
+  epochs: 100
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\

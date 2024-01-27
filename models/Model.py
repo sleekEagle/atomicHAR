@@ -14,6 +14,8 @@ class AtomicHAR(nn.Module):
                      dilation=1,
                      kernel_size=3,
                      stride=1).double()
+        print('in model. conf:')
+        print(conf)
         self.tr_conf=conf.transformer
         '''
         transformer input: se_len, batch_size, emb_dim
@@ -50,6 +52,9 @@ class AtomicHAR(nn.Module):
         #maximum length of an atom in number of segments
         self.max_atom_len=10
 
+        print('model parameters...')
+        print((conf.cnn.imu_feat_dim,conf.forcast.hidden_dim))
+        
     def forward(self, x,imu_mask,imu_len):
         #encooding
         bs,seq,dim,l=x.shape

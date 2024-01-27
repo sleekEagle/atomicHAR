@@ -1,0 +1,16 @@
+program: train.py
+method: bayes
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  utdmhad.model.forcast.hidden_dim:
+    values: [4,8,12,16,20,24,28,32]
+  utdmhad.model.cnn.imu_feat_dim:
+    values: [4,8,12,16,20,24,28,32]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}

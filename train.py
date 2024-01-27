@@ -10,8 +10,11 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
-# import wandb
-# wandb.login()
+import logging
+# A logger for this file
+log = logging.getLogger(__name__)
+import wandb
+wandb.login()
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -60,13 +63,16 @@ def main(conf : DictConfig) -> None:
     wandb_conf = OmegaConf.to_container(
         conf, resolve=True, throw_on_missing=True
     )
-    # wandb.init(project="atomicHAR",
-    #            config=wandb_conf,
-    #            )
+    wandb.init(project="atomicHAR",
+               config=wandb_conf,
+               )
 
+    # conf=conf.params
+    log.info('**********')
+    log.info(conf)
     train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     print('dataloaders obtained...')
-
+    
     athar_model=AtomicHAR(conf.utdmhad.model)
     MSE_loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
@@ -75,9 +81,8 @@ def main(conf : DictConfig) -> None:
 
     lr=get_lr(optimizer)
     print(f'new lr={lr}')
-    w_atom=1
     min_loss=100
-    for epoch in range(1000):
+    for epoch in range(conf.model.epochs):
         mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss=0,0,0,0
         print(f'epoch={epoch}')
 
@@ -86,9 +91,6 @@ def main(conf : DictConfig) -> None:
             scheduler.step()
             lr=get_lr(optimizer)
             print(f'new lr={lr}')
-
-        if epoch==100:
-            w_atom=1
 
         for i,input in enumerate(train_dataloader):
             imu,xyz,imu_mask,xyz_mask,imu_len=input
@@ -129,6 +131,7 @@ def main(conf : DictConfig) -> None:
         #     "forcast_loss": mean_forcast_loss,
         #     "atom loss":mean_atom_loss})
         # plot_seg(imu,output['seg_len_list'])
+        log.info(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
@@ -136,19 +139,21 @@ def main(conf : DictConfig) -> None:
 
         
 
-    print('broke')
+    
 
-    real=torch.reshape(output['forcast_real'],(2,20,-1))
-    forcast=torch.reshape(output['forcast'],(2,20,-1))
-    d=(real-forcast)
-    d=torch.mean(d,dim=2)
-    d_plot=d[0,:].detach().cpu().numpy()
+    # real=torch.reshape(output['forcast_real'],(2,20,-1))
+    # forcast=torch.reshape(output['forcast'],(2,20,-1))
+    # d=(real-forcast)
+    # d=torch.mean(d,dim=2)
+    # d_plot=d[0,:].detach().cpu().numpy()
 
 
 
     # print(result.shape)
     # plt.plot(result.detach().cpu().numpy()[0,0,:])
     # plt.plot(imu[0,0,:].detach().cpu().numpy())
+    wandb.log({'loss':min_loss})
+    return min_loss
 
 
 
