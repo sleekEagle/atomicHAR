@@ -5,6 +5,11 @@ from models.Transformer import TransformerModel
 from models.Decoder import CNN_imu_decoder,CNN_atom_decoder
 import torch
 
+def stack_tensor(t,stack_dim=0):
+    return torch.cat([t[i] for i in range(t.shape[0])],dim=stack_dim)
+def unstack_tensor(t,n,len):
+    return torch.cat([torch.unsqueeze(t[i*len:(i+1)*len],dim=0) for i in range(n)],dim=0)
+
 class AtomicHAR(nn.Module):
     def __init__(self,conf):
         super().__init__()
@@ -46,7 +51,7 @@ class AtomicHAR(nn.Module):
         self.leak=nn.LeakyReLU()
 
         #parameters to control the max segmentation
-        self.thr=0.0001
+        self.thr=0.05
         self.half_window=2
         self.imu_resample_len=20
         #maximum length of an atom in number of segments
@@ -67,7 +72,7 @@ class AtomicHAR(nn.Module):
           x[2,seq,6,20] ] 
                         
         '''
-        imu_input=torch.reshape(x,(-1,dim,l))
+        imu_input=torch.cat([x[i,:,:,:] for i in range(bs)],dim=0)
         cnn_out=self.cnn(imu_input)
         l,_,_=cnn_out.shape
         cnn_out=cnn_out.view(l,-1)
@@ -81,7 +86,7 @@ class AtomicHAR(nn.Module):
 
         #**********forcasting the next sequence*********************************
         #forcasting
-        forcast_in=torch.reshape(bridge_out,(bs,seq,-1))
+        forcast_in=torch.cat([torch.unsqueeze(bridge_out[i*seq:(i+1)*seq,:],dim=0) for i in range(bs)],dim=0)
         '''
         forcast_in.shape = [bs,seq,bd]
         [ [[bd][bd]...seq number] ,
@@ -96,51 +101,110 @@ class AtomicHAR(nn.Module):
         bs,seq,d=forcast_in.shape
         forcast_mask=torch.ones_like(forcast_in)
         forcast_mask[:,0,:]=0
-        forcast_mask=torch.reshape(forcast_mask,(-1,d))
+        forcast_mask=stack_tensor(forcast_mask)
         imu_mask=imu_mask[:,:,0,0].unsqueeze(2)
         imu_mask_=imu_mask.repeat(1,1,d)
-        imu_mask_=torch.reshape(imu_mask_,(-1,d))
+        imu_mask_=stack_tensor(imu_mask_)
         forcast_mask=forcast_mask*imu_mask_
-        
-        forcast_in=torch.reshape(forcast_in,(-1,d))
+        forcast_in=stack_tensor(forcast_in)
+        forcast_in_shft=stack_tensor(forcast_in_shft)
+
         '''
         forcast_in.shape = [bs*seq, bd]
         [[bd][bd]...seq number [bd][bd]...seq number [bd][bd]...seq number]
         [bd][bd]...seq number times bs
         '''
-        forcast_in_shft=torch.reshape(forcast_in_shft,(-1,d))
 
         #forcast the next step and calculate the loss
-        #**********read!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        #check is the forcast loss goes down to 0.00004 level
-        #change the number of layers. this this is achieved consistantly. 
-        #now the convergence is pretty noisy.
-
         forcast_feat=F.relu(self.lin_forcast1(forcast_in_shft))
         forcast=self.lin_forcast2(forcast_feat)
 
         forcast_loss=torch.mean(torch.square(forcast*forcast_mask-forcast_in*forcast_mask),dim=1)
-        #select forcast loss threshold dynamically
-        # sorted, indices=torch.sort(forcast_loss)
-        # l=int(sorted.shape[0]*0.9)
-        # forcast_loss_thr=sorted[l].item()
-        forcast_loss=torch.reshape(forcast_loss,(bs,seq))
+        forcast_loss_reshp=unstack_tensor(forcast_loss,bs,seq)
+
         '''
-        forcast_loss.shape=[bs,seq]
+        forcast_loss_reshp.shape=[bs,seq]
         [loss, loss, loss, loss ......seq number,
         loss, loss, loss, loss ......seq number,
         loss, loss, loss, loss ......seq number,
         ......bs number]
         '''
-        
         #************************************************************************
-
         #find segment points using forcast loss**********************************
-        # loss_mask=torch.ones_like(forcast_loss)
-        # loss_mask[:,0:2]=0
-        # loss_mask[:,-2:]=0
-        # forcast_valid=forcast_loss>forcast_loss_thr
+        select_ratio=0.2
+        sorted, indices=torch.sort(forcast_loss*forcast_mask[:,0],descending=True)
+        cutoff_value=torch.min(sorted[:int(sorted.shape[0]*select_ratio)]).item()
+        seg_args=torch.argwhere(forcast_loss_reshp>cutoff_value)
+
+        segment_break_points=[]
+        for b in range(bs):
+            batch_seg_points=seg_args[torch.argwhere(seg_args[:,0]==b)[:,0]][:,1]
+            new_segs=[]
+            if batch_seg_points.shape[0]>0:
+              for i in range(batch_seg_points.shape[0]-1):
+                  seg_len=(batch_seg_points[i+1]-batch_seg_points[i]).item()
+                  if seg_len > self.max_atom_len:
+                      #add more seg points till we read the next seg point
+                      current_arg=batch_seg_points[i].item()
+                      new_segs.append(current_arg)
+                      while(current_arg<batch_seg_points[i+1].item()):
+                          current_arg+=self.max_atom_len
+                          if current_arg>=batch_seg_points[i+1].item(): 
+                              break
+                          else:
+                              new_segs.append(current_arg)
+                  else:
+                      new_segs.append(batch_seg_points[i].item())
+              new_segs.append(batch_seg_points[-1].item())
+            segment_break_points.append(new_segs)
+
+        bridge_out_resh=unstack_tensor(bridge_out,bs,seq)
+        '''
+        bridge_out_resh.shape = [bs, seq, bd]
+        [ [bd][bd][bd][bd][bd].....seq number ,
+          [bd][bd][bd][bd][bd].....seq number ,
+          [bd][bd][bd][bd][bd].....seq number ,
+          [bd][bd][bd][bd][bd].....seq number ,
+          ........ bs number]
+        '''
+        #***********************************************************************************
+        #collect segment features from bridge_out_resh
+        atom_features,imu_atoms,imu_atoms_mask=torch.empty(0),torch.empty(0),torch.empty(0)
+        for b in range(bs):
+            last_bp=0
+            bp=segment_break_points[b]
+            for bp_ in bp:
+                features=bridge_out_resh[b,last_bp:bp_,:]
+                #pad to get a constant size
+                pad_size=self.max_atom_len-features.shape[0]
+                features_padded=F.pad(features,(0,0,pad_size,0),"constant", 0)
+                features_padded=torch.unsqueeze(features_padded,dim=0)
+                atom_features=torch.cat([atom_features,features_padded],dim=0)
+                #get the relavent imu segments
+                imu_atom_stacked=stack_tensor(x[b,last_bp:bp_,:,:],-1)
+                atom_pad_size=self.max_atom_len*seq-imu_atom_stacked.shape[-1]
+                imu_atom_padded=F.pad(imu_atom_stacked,(atom_pad_size,0,0,0),"constant", 0)
+                imu_atom_padded=torch.unsqueeze(imu_atom_padded,dim=0)
+                atom_mask=torch.zeros_like(imu_atom_padded)
+                atom_mask[0,:,atom_pad_size:]=1
+                imu_atoms_mask=torch.cat([imu_atoms_mask,atom_mask],dim=0)
+                imu_atoms=torch.cat([imu_atoms,imu_atom_padded],dim=0)
+                last_bp=bp_
+        #***********************************************************************************
+
+        #**************************encoding atoms*******************************************
+        atom_features=torch.swapaxes(atom_features,1,2)
+        atom_embedding=self.atom_encoder(atom_features)
+
+        #**************************decoding atoms*******************************************
+        atom_embedding=torch.unsqueeze(atom_embedding,dim=1)
+        atom_recreation=self.atom_decoder(atom_embedding)
+        # loss_mask=torch.ones_like(forcast_loss_reshp)
+        # loss_mask[:,0:1]=0
+        # loss_mask[:,-1:]=0
+        # forcast_valid=forcast_loss_reshp>cutoff_value
         # forcast_valid=forcast_valid*loss_mask
+
         # forcast_loss_=forcast_loss*forcast_valid
         # forcast_loss_selected=self.get_max(forcast_loss_,self.half_window*2,self.half_window*2)
         # forcast_loss_second=forcast_loss_selected[:,self.half_window:]
@@ -200,14 +264,7 @@ class AtomicHAR(nn.Module):
         # mask=mask.double()
 
         # bridge_out_tr=torch.reshape(bridge_out,(bs,seq,-1))
-        '''
-        bridge_out_tr.shape = [bs, seq, bd]
-        [ [bd][bd][bd][bd][bd].....seq number ,
-          [bd][bd][bd][bd][bd].....seq number ,
-          [bd][bd][bd][bd][bd].....seq number ,
-          [bd][bd][bd][bd][bd].....seq number ,
-          ........ bs number]
-        '''
+   
         # seg_featurs=torch.empty(0)
         # for b in range(bs): 
         #     b_seg_points=torch.cumsum(torch.tensor(seg_len_list[b]),dim=0)
@@ -224,25 +281,20 @@ class AtomicHAR(nn.Module):
         # atom_emb=self.atom_encoder(seg_featurs)
 
         # l,_=bridge_out.shape
-        bridge_out=bridge_out.view(l,self.imu_decorder_in_channels,4)
-
         # tr_out=self.transformer(tr_input)      
 
         #IMU decoder: segment level*******************************************************************
+        bridge_out=bridge_out.view(l,self.imu_decorder_in_channels,4)
         imu_gen=self.imu_decoder(bridge_out)
         _,dim,l=imu_gen.shape
         imu_gen=torch.reshape(imu_gen,(bs,seq,dim,l))
         #**********************************************************************************************
 
-        #IMU decoder: atomic level*********************************************************************
-        # n_seg,_=atom_emb.shape
-        # atom_decoder_in=torch.reshape(atom_emb,(n_seg,4,4))
-        # atom_gen=self.atom_decoder(atom_decoder_in)
-        #**********************************************************************************************
-
         output={}
         output['imu_gen']=imu_gen
-        # output['atom_gen']=atom_gen
+        output['atom_gen']=atom_recreation
+        output['atom_mask']=imu_atoms_mask
+        output['imu_atoms']=imu_atoms
         # output['imu_last_seg']=imu_last_seg
         # output['seg_len_list']=seg_len_list
         output['bridge_out']=bridge_out

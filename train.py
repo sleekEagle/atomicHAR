@@ -104,10 +104,11 @@ def main(conf : DictConfig) -> None:
             forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
                                      output['forcast']*output['forcast_mask'])
             
-            # atom_loss=MSE_loss_fn(output['atom_gen'],imu_segs_interp)
+            imu_atoms=output['imu_atoms']
+            atom_loss=MSE_loss_fn(output['atom_gen']*output['atom_mask'],imu_atoms*output['atom_mask'])
             
             # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=forcast_loss+imu_loss
+            loss=forcast_loss+imu_loss+atom_loss
             # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
 
             loss.backward()
@@ -115,7 +116,7 @@ def main(conf : DictConfig) -> None:
             mean_loss+=loss.item()
             mean_imu_loss+=imu_loss.item()
             mean_forcast_loss+=forcast_loss.item()
-            # mean_atom_loss+=atom_loss.item()
+            mean_atom_loss+=atom_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
@@ -127,9 +128,9 @@ def main(conf : DictConfig) -> None:
             torch.save(athar_model.state_dict(),conf.model.save_path)
 
         print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
-        # wandb.log({"IMU_loss": mean_imu_loss,
-        #     "forcast_loss": mean_forcast_loss,
-        #     "atom loss":mean_atom_loss})
+        wandb.log({"IMU_loss": mean_imu_loss,
+            "forcast_loss": mean_forcast_loss,
+            "atom loss":mean_atom_loss})
         # plot_seg(imu,output['seg_len_list'])
         log.info(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
         mean_loss=0

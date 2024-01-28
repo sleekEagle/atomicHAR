@@ -43,7 +43,7 @@ class Atom_encoder_CNN(nn.Module):
     def __init__(self):
         super().__init__()
         # padding=get_padding(input_size,dilation,kernel_size,stride)
-        self.conv1 = nn.Conv1d(4, 16, 
+        self.conv1 = nn.Conv1d(32, 16, 
                                kernel_size=3,
                                stride=2,
                                padding=0)
