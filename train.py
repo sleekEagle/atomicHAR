@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import logging
+import utils
 # A logger for this file
 log = logging.getLogger(__name__)
 import wandb
@@ -78,7 +79,6 @@ def main(conf : DictConfig) -> None:
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
 
-
     lr=get_lr(optimizer)
     print(f'new lr={lr}')
     min_loss=100
@@ -138,10 +138,18 @@ def main(conf : DictConfig) -> None:
         mean_forcast_loss=0
         mean_atom_loss=0
 
+        #*************eval*******************
+        eval_out=utils.eval(athar_model,test_dataloader)
+        eval_imu_loss=eval_out['imu_loss']
+        eval_forcast_loss=eval_out['forcast_loss']
+        eval_atom_loss=eval_out['atom_loss']
+        print(f'Eval metrics: IMU loss = {eval_imu_loss:.5f},forcast loss= {eval_forcast_loss:.5f}, atom loss= {eval_atom_loss:.5f}')
+        wandb.log({"eval_IMU_loss": eval_imu_loss,
+            "eval_forcast_loss": eval_forcast_loss,
+            "eval_atom loss":eval_atom_loss})
+        #************************************
+
         
-
-    
-
     # real=torch.reshape(output['forcast_real'],(2,20,-1))
     # forcast=torch.reshape(output['forcast'],(2,20,-1))
     # d=(real-forcast)
