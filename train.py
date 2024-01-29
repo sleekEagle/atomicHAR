@@ -74,8 +74,9 @@ def main(conf : DictConfig) -> None:
     train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     print('dataloaders obtained...')
     
-    athar_model=AtomicHAR(conf.utdmhad.model)
+    athar_model=AtomicHAR(conf.utdmhad.model,len(conf.utdmhad.train.actions))
     MSE_loss_fn = nn.MSELoss()
+    cls_loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
 
@@ -83,7 +84,7 @@ def main(conf : DictConfig) -> None:
     print(f'new lr={lr}')
     min_loss=100
     for epoch in range(conf.model.epochs):
-        mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss=0,0,0,0
+        mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss,mean_cls_loss=0,0,0,0,0
         print(f'epoch={epoch}')
 
         if (epoch+1)%10==0:
@@ -93,7 +94,7 @@ def main(conf : DictConfig) -> None:
             print(f'new lr={lr}')
 
         for i,input in enumerate(train_dataloader):
-            imu,xyz,imu_mask,xyz_mask,imu_len=input
+            imu,xyz,imu_mask,xyz_mask,imu_len,activity=input
 
             optimizer.zero_grad()
 
@@ -106,10 +107,12 @@ def main(conf : DictConfig) -> None:
             
             imu_atoms=output['imu_atoms']
             atom_loss=MSE_loss_fn(output['atom_gen']*output['atom_mask'],imu_atoms*output['atom_mask'])
+            cls_loss=cls_loss_fn(activity.double(),output['activity_label'])
             
-            # xyz_loss=MSE_loss_fn(xyz*xyz_mask,xyz_gen*xyz_mask)
-            loss=forcast_loss+imu_loss+atom_loss
-            # print(f'IMU loss = {imu_loss:.5f},forcast loss= {forcast_loss:.5f}, atom loss= {atom_loss:.5f}, total loss={mean_loss:.2f}')
+            loss=forcast_loss+imu_loss+atom_loss+cls_loss*0.1
+
+            acc=utils.get_acc(activity,output['activity_label'])
+
 
             loss.backward()
             optimizer.step()
@@ -117,36 +120,42 @@ def main(conf : DictConfig) -> None:
             mean_imu_loss+=imu_loss.item()
             mean_forcast_loss+=forcast_loss.item()
             mean_atom_loss+=atom_loss.item()
+            mean_cls_loss+=cls_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
         mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
         mean_atom_loss=mean_atom_loss/len(train_dataloader)
+        mean_cls_loss=mean_cls_loss/len(train_dataloader)
+
         if mean_loss<min_loss:
             print('saving model...')
             min_loss=mean_loss
             torch.save(athar_model.state_dict(),conf.model.save_path)
 
-        print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
+        print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f},atom loss= {mean_atom_loss:.5f},cls loss= {mean_cls_loss:.5f},accuracy={acc:.2f}')
+        
         wandb.log({"IMU_loss": mean_imu_loss,
             "forcast_loss": mean_forcast_loss,
-            "atom loss":mean_atom_loss})
+            "cls_loss": mean_cls_loss,
+            "atom loss":mean_atom_loss,
+            'accuracy':acc})
         # plot_seg(imu,output['seg_len_list'])
-        log.info(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f}, atom loss= {mean_atom_loss:.5f}, total loss={mean_loss:.2f}')
+        log.info(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f},atom loss= {mean_atom_loss:.5f},cls loss= {mean_cls_loss:.5f},accuracy={acc:.2f}')
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
         mean_atom_loss=0
 
         #*************eval*******************
-        eval_out=utils.eval(athar_model,test_dataloader)
-        eval_imu_loss=eval_out['imu_loss']
-        eval_forcast_loss=eval_out['forcast_loss']
-        eval_atom_loss=eval_out['atom_loss']
-        print(f'Eval metrics: IMU loss = {eval_imu_loss:.5f},forcast loss= {eval_forcast_loss:.5f}, atom loss= {eval_atom_loss:.5f}')
-        wandb.log({"eval_IMU_loss": eval_imu_loss,
-            "eval_forcast_loss": eval_forcast_loss,
-            "eval_atom loss":eval_atom_loss})
+        # eval_out=utils.eval(athar_model,test_dataloader)
+        # eval_imu_loss=eval_out['imu_loss']
+        # eval_forcast_loss=eval_out['forcast_loss']
+        # eval_atom_loss=eval_out['atom_loss']
+        # print(f'Eval metrics: IMU loss = {eval_imu_loss:.5f},forcast loss= {eval_forcast_loss:.5f}, atom loss= {eval_atom_loss:.5f}')
+        # wandb.log({"eval_IMU_loss": eval_imu_loss,
+        #     "eval_forcast_loss": eval_forcast_loss,
+        #     "eval_atom loss":eval_atom_loss})
         #************************************
 
         

@@ -10,7 +10,7 @@ utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
   imu_seg: True
   train:
-    bs: 12
+    bs: 32
     actions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
     subjects: [1, 2, 3, 4, 5]
   test:
@@ -29,5 +29,6 @@ utdmhad:
       in_channels: 6
       #imu_feat_dim must be divisible by 4
       imu_feat_dim: 32
+      atom_emb_dim: 16
     forcast:
       hidden_dim: 20

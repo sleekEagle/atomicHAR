@@ -1,11 +1,18 @@
 import torch.nn as nn
 import torch
 
+def get_acc(gt,pred):
+    label_pred=torch.argmax(pred,dim=1)
+    label_gt=torch.argmax(gt,dim=1)
+    acc=torch.sum(label_gt==label_pred).item()/gt.shape[0]
+    acc=acc*100
+    return acc
+
 def eval(model,dataloader):
     MSE_loss_fn = nn.MSELoss()
     imu_loss_sum,forcast_loss_sum,atom_loss_sum=0,0,0
     for i,input in enumerate(dataloader):
-        imu,xyz,imu_mask,xyz_mask,imu_len=input
+        imu,xyz,imu_mask,xyz_mask,imu_len,activity=input
         output=model(imu,imu_mask,imu_len)
         imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
         forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],

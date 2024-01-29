@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.Encoder import CNN,Linear_encoder,Atom_encoder_CNN
 from models.Transformer import TransformerModel
-from models.Decoder import CNN_imu_decoder,CNN_atom_decoder
+from models.Decoder import CNN_imu_decoder,CNN_atom_decoder,Activity_classifier_CNN
 import torch
 
 def stack_tensor(t,stack_dim=0):
@@ -11,7 +11,7 @@ def unstack_tensor(t,n,len):
     return torch.cat([torch.unsqueeze(t[i*len:(i+1)*len],dim=0) for i in range(n)],dim=0)
 
 class AtomicHAR(nn.Module):
-    def __init__(self,conf):
+    def __init__(self,conf,n_activities):
         super().__init__()
         self.cnn=CNN(conf.cnn.in_channels,
                      conf.transformer.d_model,
@@ -35,13 +35,12 @@ class AtomicHAR(nn.Module):
         self.imu_feat_dim=conf.cnn.imu_feat_dim
         self.imu_decorder_in_channels=int(self.imu_feat_dim/4)
         forcast_hidden=conf.forcast.hidden_dim
-
         self.transformer=self.transformer.double()
         self.imu_decoder=CNN_imu_decoder(self.imu_decorder_in_channels).double()
         self.atom_decoder=CNN_atom_decoder().double()
-        self.atom_encoder=Atom_encoder_CNN().double()
+        self.activity_classifier=Activity_classifier_CNN(conf.cnn.atom_emb_dim,n_activities).double()
+        self.atom_encoder=Atom_encoder_CNN(conf.cnn.atom_emb_dim).double()
 
-        
         self.lin_bridge1 = nn.Linear(32*2, self.imu_feat_dim).double()
         self.lin_forcast1=nn.Linear(self.imu_feat_dim,forcast_hidden).double()
         self.lin_forcast2=nn.Linear(forcast_hidden,self.imu_feat_dim).double()
@@ -139,6 +138,10 @@ class AtomicHAR(nn.Module):
         segment_break_points=[]
         for b in range(bs):
             batch_seg_points=seg_args[torch.argwhere(seg_args[:,0]==b)[:,0]][:,1]
+            #add the last segment point as a seg point if not present
+            last_data_pt,_=torch.max(torch.argwhere(imu_mask[b,:,0]==1),dim=0)
+            if batch_seg_points.shape[0]==0 or (last_data_pt.item() > batch_seg_points[-1].item()):
+                batch_seg_points=torch.cat((batch_seg_points,last_data_pt))
             new_segs=[]
             if batch_seg_points.shape[0]>0:
               for i in range(batch_seg_points.shape[0]-1):
@@ -199,6 +202,28 @@ class AtomicHAR(nn.Module):
         #**************************decoding atoms*******************************************
         atom_embedding=torch.unsqueeze(atom_embedding,dim=1)
         atom_recreation=self.atom_decoder(atom_embedding)
+        #***********************************************************************************
+        
+        #**************************activity classification*******************************************
+        n_atom_list=[len(item) for item in segment_break_points]
+        max_n_atoms_len=max(n_atom_list)
+        seg_idx=0
+        activity_emb=torch.empty(0)
+        for seg in segment_break_points:
+            n_seg=len(seg)
+            atom_seq=atom_embedding[seg_idx:seg_idx+n_seg,:][:,0,:]
+            #padding
+            padding_len=max_n_atoms_len-atom_seq.shape[0]
+            atom_seq_padded=F.pad(atom_seq,(0,0,0,padding_len),"constant", 0)
+            atom_seq_padded=torch.unsqueeze(atom_seq_padded,dim=0)
+            activity_emb=torch.cat((activity_emb,atom_seq_padded))
+        activity_emb=torch.swapaxes(activity_emb,1,2)
+        '''
+        activity_emb.shape = [bs,atom_emb_size,max_atom_len]
+        max_seg_len: for each batch, the maximum number of atoms that make up an activity
+        '''
+        ac_labels=self.activity_classifier(activity_emb) 
+
         # loss_mask=torch.ones_like(forcast_loss_reshp)
         # loss_mask[:,0:1]=0
         # loss_mask[:,-1:]=0
@@ -302,6 +327,7 @@ class AtomicHAR(nn.Module):
         output['forcast']=forcast
         output['forcast_mask']=forcast_mask
         output['forcast_loss']=forcast_loss
+        output['activity_label']=ac_labels
         #**********************************************************************************
 
         return output
