@@ -31,9 +31,10 @@ def list_files(path,actions=[1,2,3],subjects=[1,2]):
     in_files = [d for d in os.listdir(in_directory) if (os.path.splitext(d)[1]=='.mat' and 
                                                   '_'.join(d.split('_')[0:2]) in prefix)]
     in_files.sort()
+    activities=[int(name.split('_')[0][1:])-1 for name in in_files]
     sk_files=[os.path.join(sk_directory,file) for file in sk_files]
     in_files=[os.path.join(in_directory,file) for file in in_files]
-    return sk_files,in_files
+    return sk_files,in_files,activities
 
 def get_wrist_xyz(sk_file):
     wrist = loadmat(sk_file)['d_skel'][10]
@@ -106,7 +107,11 @@ class UTD_MHAD(Dataset):
                  subjects=[1,2]):
         self.data_dir=data_dir
         self.imu_seg=imu_seg
-        self.sk_files,self.in_files = list_files(data_dir,actions,subjects)
+        self.sk_files,self.in_files,self.activities = list_files(data_dir,actions,subjects)
+        uni_a=[str(item) for item in list(np.unique(self.activities))]
+        text = f"{', '.join(uni_a)}"
+        print('unique activities: '+text)
+        self.max_ac=max(self.activities)
         self.resample=resample
         self.curvature=curvature
         self.ranges=get_curv_range()
@@ -122,6 +127,10 @@ class UTD_MHAD(Dataset):
         in_file=self.in_files[idx]
         xyz=get_wrist_xyz(sk_file)
         imu=get_imu(in_file)
+        activity=self.activities[idx]
+        #convert activity to one-hot format
+        ac_onhot = np.zeros((self.max_ac+1), dtype=int)
+        ac_onhot[activity]=1
         if self.resample:
             xyz_resampled=resample_data(xyz,imu.shape[0])
         else:
@@ -173,7 +182,7 @@ class UTD_MHAD(Dataset):
             xyz_mask=np.zeros_like(xyz_seg_norm)
             xyz_mask[0:valid_data_seq,:,:]=1
 
-            return imu_seg_norm,xyz_seg_norm,imu_mask,xyz_mask,imu_len
+            return imu_seg_norm,xyz_seg_norm,imu_mask,xyz_mask,imu_len,ac_onhot
         
         else:
             seg=self.get_curve_segmentation(curvature)

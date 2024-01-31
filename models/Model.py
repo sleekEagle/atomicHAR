@@ -2,13 +2,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.Encoder import CNN,Linear_encoder,Atom_encoder_CNN
 from models.Transformer import TransformerModel
-from models.Decoder import CNN_imu_decoder,CNN_atom_decoder,Activity_classifier_CNN
+from models.Decoder import CNN_imu_decoder,CNN_atom_decoder,Activity_classifier_LIN
 import torch
-
-def stack_tensor(t,stack_dim=0):
-    return torch.cat([t[i] for i in range(t.shape[0])],dim=stack_dim)
-def unstack_tensor(t,n,len):
-    return torch.cat([torch.unsqueeze(t[i*len:(i+1)*len],dim=0) for i in range(n)],dim=0)
+import utils
 
 class AtomicHAR(nn.Module):
     def __init__(self,conf,n_activities):
@@ -38,7 +34,8 @@ class AtomicHAR(nn.Module):
         self.transformer=self.transformer.double()
         self.imu_decoder=CNN_imu_decoder(self.imu_decorder_in_channels).double()
         self.atom_decoder=CNN_atom_decoder().double()
-        self.activity_classifier=Activity_classifier_CNN(conf.cnn.atom_emb_dim,n_activities).double()
+        # self.activity_classifier=Activity_classifier_CNN(conf.cnn.atom_emb_dim,n_activities).double()
+        self.activity_classifier=Activity_classifier_LIN().double()
         self.atom_encoder=Atom_encoder_CNN(conf.cnn.atom_emb_dim).double()
 
         self.lin_bridge1 = nn.Linear(32*2, self.imu_feat_dim).double()
@@ -100,13 +97,13 @@ class AtomicHAR(nn.Module):
         bs,seq,d=forcast_in.shape
         forcast_mask=torch.ones_like(forcast_in)
         forcast_mask[:,0,:]=0
-        forcast_mask=stack_tensor(forcast_mask)
+        forcast_mask=utils.stack_tensor(forcast_mask)
         imu_mask=imu_mask[:,:,0,0].unsqueeze(2)
         imu_mask_=imu_mask.repeat(1,1,d)
-        imu_mask_=stack_tensor(imu_mask_)
+        imu_mask_=utils.stack_tensor(imu_mask_)
         forcast_mask=forcast_mask*imu_mask_
-        forcast_in=stack_tensor(forcast_in)
-        forcast_in_shft=stack_tensor(forcast_in_shft)
+        forcast_in=utils.stack_tensor(forcast_in)
+        forcast_in_shft=utils.stack_tensor(forcast_in_shft)
 
         '''
         forcast_in.shape = [bs*seq, bd]
@@ -119,7 +116,7 @@ class AtomicHAR(nn.Module):
         forcast=self.lin_forcast2(forcast_feat)
 
         forcast_loss=torch.mean(torch.square(forcast*forcast_mask-forcast_in*forcast_mask),dim=1)
-        forcast_loss_reshp=unstack_tensor(forcast_loss,bs,seq)
+        forcast_loss_reshp=utils.unstack_tensor(forcast_loss,bs,seq)
 
         '''
         forcast_loss_reshp.shape=[bs,seq]
@@ -161,7 +158,7 @@ class AtomicHAR(nn.Module):
               new_segs.append(batch_seg_points[-1].item())
             segment_break_points.append(new_segs)
 
-        bridge_out_resh=unstack_tensor(bridge_out,bs,seq)
+        bridge_out_resh=utils.unstack_tensor(bridge_out,bs,seq)
         '''
         bridge_out_resh.shape = [bs, seq, bd]
         [ [bd][bd][bd][bd][bd].....seq number ,
@@ -184,7 +181,7 @@ class AtomicHAR(nn.Module):
                 features_padded=torch.unsqueeze(features_padded,dim=0)
                 atom_features=torch.cat([atom_features,features_padded],dim=0)
                 #get the relavent imu segments
-                imu_atom_stacked=stack_tensor(x[b,last_bp:bp_,:,:],-1)
+                imu_atom_stacked=utils.stack_tensor(x[b,last_bp:bp_,:,:],-1)
                 atom_pad_size=self.max_atom_len*seq-imu_atom_stacked.shape[-1]
                 imu_atom_padded=F.pad(imu_atom_stacked,(atom_pad_size,0,0,0),"constant", 0)
                 imu_atom_padded=torch.unsqueeze(imu_atom_padded,dim=0)
@@ -207,6 +204,7 @@ class AtomicHAR(nn.Module):
         #**************************activity classification*******************************************
         n_atom_list=[len(item) for item in segment_break_points]
         max_n_atoms_len=max(n_atom_list)
+        max_n_atoms_len=10
         seg_idx=0
         activity_emb=torch.empty(0)
         for seg in segment_break_points:
@@ -320,6 +318,7 @@ class AtomicHAR(nn.Module):
         output['atom_gen']=atom_recreation
         output['atom_mask']=imu_atoms_mask
         output['imu_atoms']=imu_atoms
+        output['segment_break_points']=segment_break_points
         # output['imu_last_seg']=imu_last_seg
         # output['seg_len_list']=seg_len_list
         output['bridge_out']=bridge_out

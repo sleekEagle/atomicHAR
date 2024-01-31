@@ -76,21 +76,40 @@ class Activity_classifier_CNN(nn.Module):
         self.conv1 = nn.Conv1d(atom_emb_dim, 16, 
                                kernel_size=3,
                                stride=1,
-                               padding=1)
+                               padding=0)
         # self.pool = nn.MaxPool1d(2, 2)
         self.conv2 = nn.Conv1d(16, 16, kernel_size=3,
                                stride=1,
-                               padding=1)
-        self.conv3 = nn.Conv1d(16, n_activities, kernel_size=3,
-                                stride=1,
-                                padding=0)
-        self.lin=nn.Linear(21, 21)
+                               padding=0)
+        self.conv3 = nn.Conv1d(16, 16, kernel_size=3,
+                        stride=1,
+                        padding=0)
+        # self.conv3 = nn.Conv1d(16, n_activities, kernel_size=3,
+        #                         stride=1,
+        #                         padding=0)
+        self.lin=nn.Linear(64, 21)
         self.sm = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
-        x = (torch.mean(self.conv3(x),dim=2))
-        x=self.lin(x)
-        cls=self.sm(x)
-        return cls
+        x = F.relu(self.conv3(x))
+        x = torch.flatten(x, 1)
+        x = self.lin(x)
+        x = self.sm(x)
+        return x
+    
+
+class Activity_classifier_LIN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.lin1=nn.Linear(160, 64)
+        self.lin2=nn.Linear(64, 21)
+        self.sm = nn.Softmax(dim=1)
+
+    def forward(self, x):
+        x=torch.flatten(x,1)
+        x=F.relu(self.lin1(x))
+        x=F.relu(self.lin2(x))
+        x=self.sm(x)
+        return x

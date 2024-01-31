@@ -1,6 +1,7 @@
 data:
-  dataset: utdmhad
+  dataset: pamap2
   num_sensors: 6
+  wandb: False
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\model.pth
@@ -12,11 +13,11 @@ utdmhad:
   train:
     bs: 32
     actions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-    subjects: [1, 2, 3, 4, 5]
+    subjects: [1, 2, 3, 4, 5,6, 7]
   test:
     bs: 1
     actions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-    subjects: [6, 7, 8]
+    subjects: [8]
   model:
     transformer: 
       d_model: 4
@@ -32,3 +33,11 @@ utdmhad:
       atom_emb_dim: 16
     forcast:
       hidden_dim: 20
+pamap2:
+  path: C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\
+  train_subj: [101,102,103,104,105,106,109]
+  test_subj: [107,108]
+  train_ac: [1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
+  test_ac: [1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
+  train_bs: 12
+  test_bs: 1

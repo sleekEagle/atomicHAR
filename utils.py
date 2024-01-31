@@ -1,5 +1,20 @@
 import torch.nn as nn
 import torch
+import os
+
+def get_files(path,ext='dat'):
+    file_list = [file for file in os.listdir(path) if file.split('.')[-1]=='dat']
+    return file_list
+
+def stack_tensor(t,stack_dim=0):
+    return torch.cat([t[i] for i in range(t.shape[0])],dim=stack_dim)
+
+#apply stack tensor for each row in dimention 0
+def batch_stack_tensor(t,stack_dim): 
+    return torch.cat([torch.unsqueeze(stack_tensor(t[i],stack_dim=stack_dim),dim=0) for i in range(t.shape[0])],dim=0)
+
+def unstack_tensor(t,n,len):
+    return torch.cat([torch.unsqueeze(t[i*len:(i+1)*len],dim=0) for i in range(n)],dim=0)
 
 def get_acc(gt,pred):
     label_pred=torch.argmax(pred,dim=1)
