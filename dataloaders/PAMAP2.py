@@ -204,9 +204,14 @@ class PAMAP2(Dataset):
         return data_sample,activity
 
 def get_dataloader(conf):
-    optional_data = load_subjects(conf.pamap2.path,'Optional')
-    protocol_data = load_subjects(conf.pamap2.path,'Protocol')
-    data = pd.concat([optional_data,protocol_data], ignore_index=True) 
+    df_list=[]
+    if 'Optional' in conf.pamap2.data_types:
+        optional_data = load_subjects(conf.pamap2.path,'Optional')
+        df_list.append(optional_data)
+    if 'Protocol' in conf.pamap2.data_types:
+        protocol_data = load_subjects(conf.pamap2.path,'Protocol')
+        df_list.append(protocol_data)
+    data = pd.concat(df_list, ignore_index=True) 
 
     training_data=PAMAP2(data,
                     actions=conf.pamap2.train_ac,

@@ -110,7 +110,7 @@ def main(conf : DictConfig) -> None:
 
             optimizer.zero_grad()
 
-            output=athar_model(imu,imu_mask,imu_len)
+            output=athar_model(imu)
             # imu_segs_interp=get_imu_segments(imu,output['imu_lasst_seg'],output['seg_len_list'])
             
             imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
