@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.Encoder import CNN,Linear_encoder,Atom_encoder_CNN
 from models.Transformer import TransformerModel
-from models.Decoder import CNN_imu_decoder,CNN_atom_decoder,Activity_classifier_LIN
+from models.Decoder import CNN_imu_decoder
 import torch
 import utils
 import matplotlib.pyplot as plt
@@ -15,18 +15,25 @@ class AtomicHAR(nn.Module):
         print(conf)
         self.tr_conf=conf.transformer
         self.thr=0.47256
+        self.transformer=TransformerModel(self.tr_conf.d_model,
+                                          self.tr_conf.n_head,
+                                          self.tr_conf.dim_feedforward,
+                                          self.tr_conf.num_layers,
+                                          self.tr_conf.d_out,
+                                          self.tr_conf.dropout)
+        self.decoder=CNN_imu_decoder(1).double()
+
 
         
     def forward(self, x):
         #encooding
-        cnn_out,cnn_weights=self.cnn(x)
-        atom_detected=cnn_out>self.thr
-        atom_detected[:,:,0:2]=0
-        atom_detected[:,:,-2:-1]=0
+        atom_emb=self.cnn(x)
+        atom_emb=torch.swapdims(atom_emb,0,1)
+        trns_out=self.transformer(atom_emb)[-1,:,:]
+        #reconstruct signal
+        reconst=self.decoder(trns_out)
 
-        plt.plot(atom_detected[0,0,:])
-
-        return 1
+        return reconst
     
     def get_max(self,t,window_size,step):
         windows=t.unfold(1,window_size,step)

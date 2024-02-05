@@ -79,7 +79,7 @@ def main(conf : DictConfig) -> None:
 
     print('dataloaders obtained...')
     
-    athar_model=AtomicHAR(conf.utdmhad.model,len(conf.utdmhad.train.actions))
+    athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
     MSE_loss_fn = nn.MSELoss()
     cls_loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
@@ -113,7 +113,7 @@ def main(conf : DictConfig) -> None:
             output=athar_model(imu)
             # imu_segs_interp=get_imu_segments(imu,output['imu_lasst_seg'],output['seg_len_list'])
             
-            imu_loss=MSE_loss_fn(imu*imu_mask,output['imu_gen']*imu_mask)
+            imu_loss=MSE_loss_fn(imu,output)
             forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
                                      output['forcast']*output['forcast_mask'])
             

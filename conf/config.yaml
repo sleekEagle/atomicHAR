@@ -42,3 +42,18 @@ pamap2:
   test_ac: [1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
   train_bs: 12
   test_bs: 1
+  model:
+    transformer: 
+      d_model: 40
+      num_layers: 1
+      n_head: 4
+      dropout: 0.2
+      dim_feedforward: 64
+      d_out: 32
+    cnn:
+      in_channels: 6
+      #imu_feat_dim must be divisible by 4
+      imu_feat_dim: 32
+      atom_emb_dim: 16
+    forcast:
+      hidden_dim: 20

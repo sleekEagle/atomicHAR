@@ -6,11 +6,13 @@ class Linear_decoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc1 = nn.Linear(32, 128)
-        self.fc2 = nn.Linear(128, 20)
+        self.fc2 = nn.Linear(128, 256)
+        self.fc3 = nn.Linear(256, 1000)
 
     def forward(self, x):
         out=F.relu(self.fc1(x))
-        out=self.fc2(out)
+        out=F.relu(self.fc2(out))
+        out=self.fc3(out)
         return out
     
 
