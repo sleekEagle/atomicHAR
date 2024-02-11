@@ -28,7 +28,7 @@ class PositionalEncoding(nn.Module):
         Arguments:
             x: any tensor with positions as decimal numbers
         """
-        pos_enc=torch.squeeze(self.pe[x,:,:])
+        pos_enc=self.pe[x,0,:]
         return self.dropout(pos_enc)
     
 
@@ -39,35 +39,38 @@ class CNN(nn.Module):
         self.conv1 = nn.Conv1d(6, 16, 
                                kernel_size=3,
                                stride=2,
-                               padding=1)
+                               padding=0)
         self.mp1 = nn.MaxPool1d(3, stride=1,padding=1)
-        # self.pool = nn.MaxPool1d(2, 2)
+        self.pool = nn.MaxPool1d(2, 2)
         self.conv2 = nn.Conv1d(16, 16, kernel_size=3,
                                stride=2,
-                               padding=1)
-        self.conv3 = nn.Conv1d(32, 32, kernel_size=3,
-                                stride=1,
-                                padding=1)
-        self.conv4 = nn.Conv1d(32, 64, kernel_size=1,
-                        stride=1,
+                               padding=0)
+        self.conv3 = nn.Conv1d(16, 16, kernel_size=3,
+                                stride=2,
+                                padding=0)
+        self.conv4 = nn.Conv1d(16, 16, kernel_size=1,
+                        stride=2,
                         padding=0)
         self.ts_pos_encoder = PositionalEncoding(32)
         self.atom_pos_encoder = PositionalEncoding(8)
 
     def forward(self, x):
-        argmax_win_len=10
-        thr=0.5
-        conv1_out = F.sigmoid(self.conv1(x))
-        conv2_out=self.conv2(conv1_out)
+        out=F.relu(self.conv1(x))
+        out=F.relu(self.conv2(out))
+        out=F.relu(self.conv3(out))
+        out=F.relu(self.conv4(out))
 
-        bs,dim,l=conv2_out.shape
-        max_atoms=torch.argmax(conv2_out,dim=1)
-        atom_emb=self.atom_pos_encoder(max_atoms)
-        pos=torch.arange(0,l)
-        pos_emb=self.ts_pos_encoder(pos).unsqueeze(dim=0).repeat(bs,1,1)
-        pos_atom_emb=torch.cat((atom_emb,pos_emb),dim=2)
+        # argmax_win_len=10
+        # thr=0.5
 
-        return pos_atom_emb
+        # bs,dim,l=conv2_out.shape
+        # max_atoms=torch.argmax(conv2_out,dim=1)
+        # atom_emb=self.atom_pos_encoder(max_atoms)
+        # pos=torch.arange(0,l)
+        # pos_emb=self.ts_pos_encoder(pos).unsqueeze(dim=0).repeat(bs,1,1)
+        # pos_atom_emb=torch.cat((atom_emb,pos_emb),dim=2)
+
+        return out
 
 class Linear_encoder(nn.Module):
     def __init__(self):

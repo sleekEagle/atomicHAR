@@ -3,7 +3,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 from dataloaders import UTD_MHAD,PAMAP2
 import matplotlib.pyplot as plt
-from models.Encoder import CNN
+from models import FCNN
 import torch
 from models.Model import AtomicHAR
 import torch.nn as nn
@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import logging
+import random
 import utils
 # A logger for this file
 log = logging.getLogger(__name__)
@@ -79,7 +80,10 @@ def main(conf : DictConfig) -> None:
 
     print('dataloaders obtained...')
     
-    athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
+    # athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
+    num_classes=len(conf.pamap2.train_ac)
+    athar_model=FCNN.HARmodel(num_classes,conf.pamap2.model.cnn.in_channels,
+                              128,32,32)
     MSE_loss_fn = nn.MSELoss()
     cls_loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
@@ -89,8 +93,10 @@ def main(conf : DictConfig) -> None:
     lr=get_lr(optimizer)
     print(f'new lr={lr}')
     min_loss=100
+    plot_freq=100000
     for epoch in range(conf.model.epochs):
         mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss,mean_cls_loss=0,0,0,0,0
+        mean_acc=0
         print(f'epoch={epoch}')
 
         if (epoch+1)%10==0:
@@ -99,74 +105,49 @@ def main(conf : DictConfig) -> None:
             lr=get_lr(optimizer)
             print(f'new lr={lr}')
         
-        if epoch==10:
-            break
-
+        if (epoch+1)%plot_freq==0:
+            plot=True
+        else:
+            plot=False
+            plot_i=random.randint(0,len(train_dataloader))
+        
         for i,input in enumerate(train_dataloader):
             if conf.data.dataset=='utdmhad': 
                 imu,xyz,imu_mask,xyz_mask,imu_len,activity=input
             elif conf.data.dataset=='pamap2':
                 imu,activity=input
+                activity_oh=utils.get_onehot(activity,num_classes)
 
             optimizer.zero_grad()
 
             output=athar_model(imu)
-            # imu_segs_interp=get_imu_segments(imu,output['imu_lasst_seg'],output['seg_len_list'])
-            
-            imu_loss=MSE_loss_fn(imu,output)
-            forcast_loss=MSE_loss_fn(output['forcast_real']*output['forcast_mask'],
-                                     output['forcast']*output['forcast_mask'])
-            
-            imu_atoms=output['imu_atoms']
-            atom_loss=MSE_loss_fn(output['atom_gen']*output['atom_mask'],imu_atoms*output['atom_mask'])
-            cls_loss=cls_loss_fn(activity.double(),output['activity_label'])
-            loss=forcast_loss+imu_loss+atom_loss
 
-            acc=utils.get_acc(activity,output['activity_label'])
-            imu_stacked=utils.batch_stack_tensor(imu,1)
-            segment_break_points=output['segment_break_points']
-            n_segs=[len(item) for item in segment_break_points]
-
-            b=0
-            n_b_segs=n_segs[b]
-            atoms=imu_atoms[0:n_b_segs]
-            pure_atoms=[]
-            last_ind=0
-            for i,end_idx in enumerate(segment_break_points[b]):
-                ind_range=end_idx-last_ind
-                pure_atoms.append(atoms[i,:,-1*ind_range*20:])
-                last_ind=end_idx
-            imu_signal=torch.empty(0)
-            for item in pure_atoms:
-                imu_signal=torch.cat((imu_signal,item),dim=1)
-
-
-            plt.plot(atoms[0,0,:].numpy())
-            plt.plot(pure_atoms[0][0].numpy())
-            plt.plot(imu_signal[0,:].numpy())
-            plt.plot(imu_stacked[0,0,:])
-
+            cls_loss=cls_loss_fn(output,activity_oh)
+            loss=cls_loss
+            acc=utils.get_acc(activity_oh,output)
 
             loss.backward()
             optimizer.step()
             mean_loss+=loss.item()
-            mean_imu_loss+=imu_loss.item()
-            mean_forcast_loss+=forcast_loss.item()
-            mean_atom_loss+=atom_loss.item()
-            mean_cls_loss+=cls_loss.item()
+            mean_imu_loss+=cls_loss.item()
+            mean_acc+=acc
+            # mean_forcast_loss+=forcast_loss.item()
+            # mean_atom_loss+=atom_loss.item()
+            # mean_cls_loss+=cls_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
         mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
         mean_atom_loss=mean_atom_loss/len(train_dataloader)
         mean_cls_loss=mean_cls_loss/len(train_dataloader)
+        mean_acc=mean_acc/len(train_dataloader)
 
         if mean_loss<min_loss:
             print('saving model...')
             min_loss=mean_loss
             torch.save(athar_model.state_dict(),conf.model.save_path)
 
-        print(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f},atom loss= {mean_atom_loss:.5f},cls loss= {mean_cls_loss:.5f},accuracy={acc:.2f}')
+        print(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
         if conf.data.wandb:
             wandb.log({"IMU_loss": mean_imu_loss,
                 "forcast_loss": mean_forcast_loss,
@@ -174,11 +155,17 @@ def main(conf : DictConfig) -> None:
                 "atom loss":mean_atom_loss,
                 'accuracy':acc})
         # plot_seg(imu,output['seg_len_list'])
-        log.info(f'IMU loss = {mean_imu_loss:.5f},forcast loss= {mean_forcast_loss:.5f},atom loss= {mean_atom_loss:.5f},cls loss= {mean_cls_loss:.5f},accuracy={acc:.2f}')
+        log.info(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
         mean_atom_loss=0
+        mean_acc=0
+
+        #***************eval*******************
+        if epoch%10==0:
+            eval_out=utils.eval(conf,athar_model,test_dataloader)
+            print(f"test accuracy: {eval_out:.2f}")
 
         #*************eval*******************
         # eval_out=utils.eval(athar_model,test_dataloader)

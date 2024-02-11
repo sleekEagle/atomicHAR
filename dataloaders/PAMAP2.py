@@ -13,17 +13,9 @@ adapted from
 https://www.kaggle.com/code/avrahamcalev/time-series-models-pamap2-dataset
 '''
 
-
-path='C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\'
-dir='Optional'
 required_columns=['time_stamp','activity_id',
               'hand_3D_acceleration_16_x','hand_3D_acceleration_16_y','hand_3D_acceleration_16_z',
               'hand_3D_gyroscope_x','hand_3D_gyroscope_y','hand_3D_gyroscope_z']
-
-train_subj=[101,102,103,104,105,106,109]
-test_subj=[107,108]
-train_ac=[1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
-test_ac=[1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
 
 
 def load_activity_map():
@@ -127,7 +119,7 @@ def load_subjects(path,dir):
     return output
 
 def get_data_split(data,subject_list,action_list):
-    condition=data['activity_id'].isin(action_list) & data['id'].isin(subject_list)
+    condition=data['activity'].isin(action_list) & data['id'].isin(subject_list)
     data_selected=data[condition]
     return data_selected
 
@@ -140,29 +132,44 @@ class PAMAP2(Dataset):
     def __init__(self,data,
                  actions=[1,2,3],
                  subjects=[1,2],
-                 window_len=10):
+                 window_len=1,
+                 overlap=0.5):
         self.actions=actions
         self.subjects=subjects
-        sample_freq=100
-        self.n_samples=sample_freq*window_len
+        self.window_len=window_len
+        self.overlap=overlap
 
         self.data_split=get_data_split(data,subjects,actions)
+        self.data_split = self.data_split.reset_index(drop=True)
+
+        sub_ac_start_idx=[]
+        for sub in subjects:
+            for a in actions:
+                print(f"subject: {sub}, activity: {a}")
+                condition=(self.data_split['id']==sub) & (self.data_split['activity']==a)
+                indices=self.data_split[condition].index.to_numpy()
+                indices=indices[0:-self.window_len]
+                start_idx=indices[::int(self.window_len*self.overlap)]  
+                for i in start_idx:
+                    sub_ac_start_idx.append([sub,a,i])
+        self.sub_ac_start_idx=sub_ac_start_idx
+
         #get all participant and activity posibilities
-        subj_list,ac_list=[],[]
-        for s in self.subjects:
-            # print(f'subject: {s}')
-            condition=self.data_split['id']==s
-            available_activities=list(self.data_split[condition]['activity_id'].unique())
-            #check how many data samples are there for each activity
-            n_samples_df=self.data_split[condition].groupby('activity_id').size()
-            # print(n_samples_df)
-            valid_activities=n_samples_df[n_samples_df>self.n_samples].index.to_numpy()
-            # print(valid_activities)
-            sub=[s]*len(valid_activities)
-            subj_list.extend(sub)
-            ac_list.extend(valid_activities) 
-        self.subj_list=subj_list
-        self.ac_list=ac_list
+        # subj_list,ac_list=[],[]
+        # for s in self.subjects:
+        #     # print(f'subject: {s}')
+        #     condition=self.data_split['id']==s
+        #     available_activities=list(self.data_split[condition]['activity'].unique())
+        #     #check how many data samples are there for each activity
+        #     n_samples_df=self.data_split[condition].groupby('activity').size()
+        #     # print(n_samples_df)
+        #     valid_activities=n_samples_df[n_samples_df>self.n_samples].index.to_numpy()
+        #     # print(valid_activities)
+        #     sub=[s]*len(valid_activities)
+        #     subj_list.extend(sub)
+        #     ac_list.extend(valid_activities) 
+        # self.subj_list=subj_list
+        # self.ac_list=ac_list
 
         #*************************************************************************
         #use these values to normalize
@@ -173,13 +180,18 @@ class PAMAP2(Dataset):
 
     def __len__(self):
         # return int(self.data_split.shape[0]/self.n_samples)
-        return len(self.subj_list)
+        return len(self.sub_ac_start_idx)
 
     def __getitem__(self, idx):
-        condition=(self.data_split['id']==self.subj_list[idx]) & (self.data_split['activity_id']==self.ac_list[idx])
-        data_selected=self.data_split[condition]
-        start_idx=random.randint(0,data_selected.shape[0]-self.n_samples)
-        data_sample=data_selected.iloc[start_idx:start_idx+self.n_samples]
+        #select an activity and a subject
+        subject=self.sub_ac_start_idx[idx][0]
+        activity=self.sub_ac_start_idx[idx][1]
+        start_idx=self.sub_ac_start_idx[idx][2]
+        # condition=(self.data_split['id']==subject) & (self.data_split['activity']==activity)
+        data_sample=self.data_split.iloc[start_idx:start_idx+self.window_len]
+        if data_sample.shape[0]==0:
+            print('here')
+
         acc_x=data_sample['hand_3D_acceleration_16_x'].values
         acc_x=np.expand_dims(acc_x,axis=0)
         acc_y=data_sample['hand_3D_acceleration_16_y'].values
@@ -194,7 +206,7 @@ class PAMAP2(Dataset):
         gyr_z=np.expand_dims(gyr_z,axis=0)
         data_sample=np.concatenate((acc_x,acc_y,acc_z,gyr_x,gyr_y,gyr_z),axis=0)
 
-        activity=self.ac_list[idx]
+        # activity=self.data_split['activity'].iloc[idx]
 
         #normmalize data
         _,l=data_sample.shape
@@ -212,15 +224,21 @@ def get_dataloader(conf):
         protocol_data = load_subjects(conf.pamap2.path,'Protocol')
         df_list.append(protocol_data)
     data = pd.concat(df_list, ignore_index=True) 
+    data['activity']=pd.factorize(data['activity_id'])[0]
+    
+    window=conf.pamap2.window_len_s*conf.pamap2.sample_freq
+    overlap=conf.pamap2.overlap
 
     training_data=PAMAP2(data,
                     actions=conf.pamap2.train_ac,
-                    subjects=conf.pamap2.train_subj)
+                    subjects=conf.pamap2.train_subj, 
+                    window_len=window, overlap=overlap)
     train_dataloader = DataLoader(training_data, batch_size=conf.pamap2.train_bs, shuffle=True)
 
     test_data=PAMAP2(data,
                     actions=conf.pamap2.test_ac,
-                    subjects=conf.pamap2.test_subj)
+                    subjects=conf.pamap2.test_subj,
+                    window_len=window,overlap=overlap)
     test_dataloader = DataLoader(test_data, batch_size=conf.pamap2.test_bs, shuffle=True)
     
     return train_dataloader,test_dataloader

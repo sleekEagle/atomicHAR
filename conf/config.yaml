@@ -5,7 +5,7 @@ data:
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\model.pth
-  epochs: 1000
+  epochs: 100000
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
@@ -35,16 +35,21 @@ utdmhad:
       hidden_dim: 20
 pamap2:
   path: C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\
-  data_types: ['Optional']
-  train_subj: [101,102,103,104,105,106,109]
-  test_subj: [107,108]
-  train_ac: [1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
-  test_ac: [1,2,3,4,5,6,7,9,10,11,12,13,16,17,18,19,20,20]
-  train_bs: 12
-  test_bs: 1
+  data_types: ['Protocol']
+  train_subj: [101,102,103]
+  # train_subj: [101,102,103,104,105,106,109]
+  test_subj: [101,102,103]
+  train_ac: [0,1,2,3,4,5]
+  # train_ac: [0,1,2,3,4,5,6,7,8,9,10,11]
+  test_ac: [0,1,2,3,4,5]
+  train_bs: 32
+  test_bs: 32
+  window_len_s: 1
+  overlap: 0.5
+  sample_freq: 100
   model:
     transformer: 
-      d_model: 40
+      d_model: 16
       num_layers: 1
       n_head: 4
       dropout: 0.2

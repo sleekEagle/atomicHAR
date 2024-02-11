@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.Encoder import CNN,Linear_encoder,Atom_encoder_CNN
 from models.Transformer import TransformerModel
-from models.Decoder import CNN_imu_decoder
+from models.Decoder import Linear_decoder,CNN_imu_decoder
 import torch
 import utils
 import matplotlib.pyplot as plt
@@ -21,19 +21,40 @@ class AtomicHAR(nn.Module):
                                           self.tr_conf.num_layers,
                                           self.tr_conf.d_out,
                                           self.tr_conf.dropout)
-        self.decoder=CNN_imu_decoder(1).double()
+        self.decoder1=Linear_decoder().double()
+        self.decoder2=CNN_imu_decoder().double()
+        self.cls1 = nn.Linear(192, 192).double()
+        self.cls2 = nn.Linear(192, 12).double()
 
 
         
     def forward(self, x):
         #encooding
         atom_emb=self.cnn(x)
-        atom_emb=torch.swapdims(atom_emb,0,1)
-        trns_out=self.transformer(atom_emb)[-1,:,:]
-        #reconstruct signal
-        reconst=self.decoder(trns_out)
+        bs,dim,l=atom_emb.shape
+        atom_emb=atom_emb.view(bs,-1)
+        out=F.relu(self.cls1(atom_emb))
+        out=F.softmax(self.cls2(out),dim=1)
+        
+        # bs,dim,l=atom_emb.shape
+        # features=atom_emb.view(bs,dim*l)
+        # recon=self.decoder1(features)
 
-        return reconst
+        # atom_emb=torch.swapdims(atom_emb,1,2).swapdims(0,1)
+        # trns_out=self.transformer(atom_emb)
+        # emb=trns_out[-1,:,:]
+        # cls=F.softmax(self.cls(emb))
+
+        # trns_out=torch.swapdims(trns_out,0,1).swapdims(1,2)
+        #reconstruct signal
+        # reconst=self.decoder1(trns_out)
+        # reconst=torch.unsqueeze(reconst,dim=1)
+        # reconst=self.decoder2(trns_out)
+        output={
+            'class':out,
+            'emb': 0
+        }
+        return output
     
     def get_max(self,t,window_size,step):
         windows=t.unfold(1,window_size,step)

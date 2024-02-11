@@ -5,9 +5,9 @@ import torch
 class Linear_decoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(32, 128)
-        self.fc2 = nn.Linear(128, 256)
-        self.fc3 = nn.Linear(256, 1000)
+        self.fc1 = nn.Linear(992, 1000)
+        self.fc2 = nn.Linear(1000, 1000)
+        self.fc3 = nn.Linear(1000, 1000)
 
     def forward(self, x):
         out=F.relu(self.fc1(x))
@@ -17,16 +17,34 @@ class Linear_decoder(nn.Module):
     
 
 class CNN_imu_decoder(nn.Module):
-    def __init__(self,in_channels):
+    def __init__(self):
         super().__init__()
-        self.tconv1 = nn.ConvTranspose1d(in_channels, 4, 5)
-        self.tconv2 = nn.ConvTranspose1d(4, 6, 4, dilation=2)
-        self.tconv3 = nn.ConvTranspose1d(6, 6, 4, dilation=2)
+        self.tconv1 = nn.ConvTranspose1d(32, 32, 12,dilation=25)
+        self.tconv2 = nn.ConvTranspose1d(32, 16, 12,dilation=23)
+        self.tconv3 = nn.ConvTranspose1d(16, 16, 12,dilation=20)
+        self.tconv4 = nn.ConvTranspose1d(16, 6, 3,dilation=1)
+        self.tconv5 = nn.ConvTranspose1d(6, 6, 11,dilation=16)
+
+        self.conv1 = nn.Conv1d(32, 16, 
+                        kernel_size=3,
+                        stride=1,
+                        padding=0)
+        self.conv2 = nn.Conv1d(16, 16, 
+                kernel_size=3,
+                stride=1,
+                padding=0)
+        self.conv3 = nn.Conv1d(16, 1, 
+                kernel_size=3,
+                stride=1,
+                padding=0)
+        self.lin1= nn.Linear(244, 1000)
+        self.lin2= nn.Linear(1000, 1000)
 
     def forward(self, x):
         out=F.relu(self.tconv1(x))
         out=F.relu(self.tconv2(out))
-        out=self.tconv3(out)
+        out=F.relu(self.tconv3(out))
+        out=self.tconv4(out)
         return out
     
 class CNN_atom_decoder(nn.Module):
