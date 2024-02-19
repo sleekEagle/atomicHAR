@@ -82,8 +82,7 @@ def main(conf : DictConfig) -> None:
     
     # athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
     num_classes=len(conf.pamap2.train_ac)
-    athar_model=FCNN.HARmodel(num_classes,conf.pamap2.model.cnn.in_channels,
-                              128,32,32)
+    athar_model=FCNN.HARmodel(conf.pamap2)
     MSE_loss_fn = nn.MSELoss()
     cls_loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
