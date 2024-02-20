@@ -52,7 +52,7 @@ class PositionalEncoding(nn.Module):
 
 class HARmodel(nn.Module):
     """Model for human-activity-recognition."""
-    def __init__(self,conf):
+    def __init__(self,conf,device):
         super().__init__()
 
         # Extract features, 1D conv layers
@@ -75,9 +75,10 @@ class HARmodel(nn.Module):
 
         trnsconf=conf.model.transformer
         self.pos_encoder=PositionalEncoding(int(trnsconf.d_model*0.5)).double()
+        self.device=device
         self.transformer=TransformerModel(trnsconf.d_model,trnsconf.n_head,
                                           trnsconf.dim_feedforward,trnsconf.num_layers,
-                                          num_classes,trnsconf.dropout).double()
+                                          num_classes,trnsconf.dropout,self.device).double()
         self.num_indices=trnsconf.num_indices
         self.atom_occuranes=trnsconf.atm_occur
         # self.lin_classifier=nn.Linear(256,num_classes).double()
@@ -117,6 +118,9 @@ class HARmodel(nn.Module):
         # _,ind=torch.sort(atom_x.view(-1),descending=True)
         # pos_enc_=pos_enc[ind,:][:self.seq_len]
         pos_enc=pos_enc.swapaxes(0,1)
+        # d=torch.zeros(128,32,64).double().to(torch.device('cuda'))
+        # tr=self.transformer.to(torch.device('cuda'))
+        # tr(d)
         output=F.softmax(self.transformer(pos_enc)[-1,:,:],dim=1)
         # output=F.softmax(self.lin_classifier(embs),dim=1)
 

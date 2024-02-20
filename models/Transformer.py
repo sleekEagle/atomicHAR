@@ -22,6 +22,7 @@ class TransformerModel(nn.Module):
         self.d_model = d_model
         self.linear = nn.Linear(d_model,d_out).double()
 
+
         # self.init_weights()
 
     def init_weights(self) -> None:
@@ -48,7 +49,7 @@ class TransformerModel(nn.Module):
             """
             src_mask = nn.Transformer.generate_square_subsequent_mask(len(src)).to(self.device)
         seq,bs,dim=src.shape
-        src_mask=torch.ones(seq,seq).double()
+        src_mask=torch.ones(seq,seq).double().to(self.device)
         output = self.transformer_encoder(src, src_mask)
         output = self.linear(output)
         return output

@@ -26,14 +26,14 @@ def get_acc(gt,pred):
     acc=acc*100
     return acc
 
-def eval(conf,model,dataloader):
+def eval(conf,model,dataloader,device):
     num_classes=len(conf.pamap2.train_ac)
     mean_acc=0
     for i,input in enumerate(dataloader):
         if conf.data.dataset=='pamap2':
             imu,activity=input
-            activity_oh=get_onehot(activity,num_classes)        
-        output=model(imu)
+            activity_oh=get_onehot(activity,num_classes).to(device)        
+        output=model(imu.to(device))
         acc=get_acc(output,activity_oh)
         mean_acc+=acc
     return mean_acc/len(dataloader)

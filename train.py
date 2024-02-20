@@ -72,17 +72,27 @@ def main(conf : DictConfig) -> None:
     # conf=conf.params
     log.info('**********')
     log.info(conf)
+
+    # Check if the specified GPU is available
+    if torch.cuda.is_available():
+        n_gpus=torch.cuda.device_count()
+        assert conf.gpu_index<n_gpus, f"The specified GPU index is not available. Available n GPUs: {n_gpus}"
+        gpu_index=min(conf.gpu_index,n_gpus-1)
+        device = torch.device(f"cuda:{gpu_index}")
+    else:
+        device = torch.device("cpu")
     
     if conf.data.dataset=='utdmhad': 
         train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     elif conf.data.dataset=='pamap2': 
-        train_dataloader,test_dataloader=PAMAP2.get_dataloader(conf)
+        train_dataloader,test_dataloader,fsl_train_dataloader,fsl_test_dataloader=PAMAP2.get_dataloader(conf)
 
     print('dataloaders obtained...')
     
     # athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
     num_classes=len(conf.pamap2.train_ac)
-    athar_model=FCNN.HARmodel(conf.pamap2)
+    athar_model=FCNN.HARmodel(conf.pamap2,device)
+    athar_model.to(device)
     MSE_loss_fn = nn.MSELoss()
     cls_loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
@@ -115,11 +125,11 @@ def main(conf : DictConfig) -> None:
                 imu,xyz,imu_mask,xyz_mask,imu_len,activity=input
             elif conf.data.dataset=='pamap2':
                 imu,activity=input
-                activity_oh=utils.get_onehot(activity,num_classes)
+                activity_oh=utils.get_onehot(activity,num_classes).to(device)
 
             optimizer.zero_grad()
 
-            output=athar_model(imu)
+            output=athar_model(imu.to(device))
 
             cls_loss=cls_loss_fn(output,activity_oh)
             loss=cls_loss
@@ -163,7 +173,7 @@ def main(conf : DictConfig) -> None:
 
         #***************eval*******************
         if epoch%10==0:
-            eval_out=utils.eval(conf,athar_model,test_dataloader)
+            eval_out=utils.eval(conf,athar_model,test_dataloader,device)
             print(f"test accuracy: {eval_out:.2f}")
 
         #*************eval*******************
@@ -192,8 +202,6 @@ def main(conf : DictConfig) -> None:
     if conf.data.wandb:
         wandb.log({'loss':min_loss})
     return min_loss
-
-
 
 if __name__ == "__main__":
     main()

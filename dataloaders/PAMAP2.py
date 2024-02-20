@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import random
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import torch
 
 '''
 adapted from 
@@ -133,11 +134,11 @@ class PAMAP2(Dataset):
                  actions=[1,2,3],
                  subjects=[1,2],
                  window_len=1,
-                 overlap=0.5):
+                 inv_overlap=0.5):
         self.actions=actions
         self.subjects=subjects
         self.window_len=window_len
-        self.overlap=overlap
+        self.inv_overlap=inv_overlap
 
         self.data_split=get_data_split(data,subjects,actions)
         self.data_split = self.data_split.reset_index(drop=True)
@@ -149,7 +150,7 @@ class PAMAP2(Dataset):
                 condition=(self.data_split['id']==sub) & (self.data_split['activity']==a)
                 indices=self.data_split[condition].index.to_numpy()
                 indices=indices[0:-self.window_len]
-                start_idx=indices[::int(self.window_len*self.overlap)]  
+                start_idx=indices[::int(self.window_len*self.inv_overlap)]  
                 for i in start_idx:
                     sub_ac_start_idx.append([sub,a,i])
         self.sub_ac_start_idx=sub_ac_start_idx
@@ -227,21 +228,40 @@ def get_dataloader(conf):
     data['activity']=pd.factorize(data['activity_id'])[0]
     
     window=conf.pamap2.window_len_s*conf.pamap2.sample_freq
-    overlap=conf.pamap2.overlap
+    overlap=conf.pamap2.inv_overlap
+
+    train_subjects=conf.pamap2[conf.pamap2.train_subj]
+    train_actions=conf.pamap2.train_ac
+    test_subjects=conf.pamap2[conf.pamap2.test_subj]
+    test_actions=conf.pamap2.test_ac
 
     training_data=PAMAP2(data,
-                    actions=conf.pamap2.train_ac,
-                    subjects=conf.pamap2.train_subj, 
-                    window_len=window, overlap=overlap)
+                    actions=train_actions,
+                    subjects=train_subjects, 
+                    window_len=window, inv_overlap=overlap)
     train_dataloader = DataLoader(training_data, batch_size=conf.pamap2.train_bs, shuffle=True)
 
     test_data=PAMAP2(data,
-                    actions=conf.pamap2.test_ac,
-                    subjects=conf.pamap2.test_subj,
-                    window_len=window,overlap=overlap)
+                    actions=test_actions,
+                    subjects=test_subjects,
+                    window_len=window,inv_overlap=overlap)
     test_dataloader = DataLoader(test_data, batch_size=conf.pamap2.test_bs, shuffle=True)
-    
-    return train_dataloader,test_dataloader
+
+    #FSL data
+    fsl_subjects=conf.pamap2[conf.pamap2.FSL.test_subj]
+    fsl_actions=conf.pamap2.FSL.test_ac
+    fsl_overlap=conf.pamap2.FSL.inv_overlap
+    fsl_data=PAMAP2(data,
+                    actions=fsl_actions,
+                    subjects=fsl_subjects,
+                    window_len=window,inv_overlap=fsl_overlap)
+    fsl_train_size=conf.pamap2.FSL.n_shot
+    fsl_test_size=len(fsl_data)-fsl_train_size
+    fsl_train_dataloader,fsl_test_dataloader = torch.utils.data.random_split(fsl_data, [fsl_train_size, fsl_test_size])
+    fsl_train_dataloader = DataLoader(fsl_train_dataloader, batch_size=len(fsl_train_dataloader), shuffle=True)
+    fsl_test_dataloader = DataLoader(fsl_test_dataloader, batch_size=len(fsl_test_dataloader), shuffle=True)
+
+    return train_dataloader,test_dataloader,fsl_train_dataloader,fsl_test_dataloader
 
 #get stats for each data dim
 def get_stats():
