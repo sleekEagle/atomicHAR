@@ -100,19 +100,18 @@ def main(conf : DictConfig) -> None:
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
 
     lr=get_lr(optimizer)
-    print(f'new lr={lr}')
+    log.info(f'new lr={lr}')
+
     min_loss=100
     plot_freq=100000
     for epoch in range(conf.model.epochs):
         mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss,mean_cls_loss=0,0,0,0,0
         mean_acc=0
-        print(f'epoch={epoch}')
 
         if (epoch+1)%10==0:
-            print('reducing learning rate...')
             scheduler.step()
             lr=get_lr(optimizer)
-            print(f'new lr={lr}')
+            log.info(f'new lr={lr}')
         
         if (epoch+1)%plot_freq==0:
             plot=True
@@ -152,11 +151,11 @@ def main(conf : DictConfig) -> None:
         mean_acc=mean_acc/len(train_dataloader)
 
         if mean_loss<min_loss:
-            print('saving model...')
+            log.info('saving model...')
             min_loss=mean_loss
             torch.save(athar_model.state_dict(),conf.model.save_path)
 
-        print(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
+        # print(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
         if conf.data.wandb:
             wandb.log({"IMU_loss": mean_imu_loss,
                 "forcast_loss": mean_forcast_loss,
@@ -164,7 +163,7 @@ def main(conf : DictConfig) -> None:
                 "atom loss":mean_atom_loss,
                 'accuracy':acc})
         # plot_seg(imu,output['seg_len_list'])
-        log.info(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
+        log.info(f'Epoch={epoch}, loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
         mean_loss=0
         mean_imu_loss=0
         mean_forcast_loss=0
@@ -174,7 +173,7 @@ def main(conf : DictConfig) -> None:
         #***************eval*******************
         if epoch%10==0:
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
-            print(f"test accuracy: {eval_out:.2f}")
+            log.info(f"test accuracy: {eval_out:.2f}")
 
         #*************eval*******************
         # eval_out=utils.eval(athar_model,test_dataloader)
