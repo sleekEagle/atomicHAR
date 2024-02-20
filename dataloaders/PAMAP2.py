@@ -1,6 +1,5 @@
 import os
 import sys
-sys.path.append('C:\\Users\\lahir\\code\\atomicHAR')
 import utils
 import pandas as pd
 import matplotlib.pyplot as plt
