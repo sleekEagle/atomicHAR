@@ -48,7 +48,27 @@ class PositionalEncoding(nn.Module):
         # emb_unique=torch.unique(emb_resh,dim=0)
         return self.dropout(emb)
 
+class AtomLayer(nn.Module):
+    def __init__(self, atom_occuranes,num_indices):
+        super(AtomLayer, self).__init__()
+        self.atom_occuranes=atom_occuranes
+        self.num_indices=num_indices
 
+    def forward(self, x):
+        values,_=torch.sort(x.view(-1),descending=True)
+        bs,n_atoms,_=x.shape
+        threshold=values[bs*n_atoms*self.atom_occuranes].item()
+        invalid_atoms=x<threshold
+        x[invalid_atoms]=0
+        sorted_tensor, indices = torch.sort(x, dim=2,descending=True)
+        indices=indices[:,:,:self.num_indices]
+
+        zeros=torch.zeros_like(x)
+        ones=torch.ones_like(x)
+        feat=zeros
+        feat.scatter_(2, indices,ones)
+        
+        return feat,indices,torch.logical_not(invalid_atoms)
 
 class HARmodel(nn.Module):
     """Model for human-activity-recognition."""
@@ -79,6 +99,7 @@ class HARmodel(nn.Module):
         self.transformer=TransformerModel(trnsconf.d_model,trnsconf.n_head,
                                           trnsconf.dim_feedforward,trnsconf.num_layers,
                                           num_classes,trnsconf.dropout,self.device).double()
+        self.atom_layer=AtomLayer(trnsconf.atm_occur,trnsconf.num_indices)
         self.num_indices=trnsconf.num_indices
         self.atom_occuranes=trnsconf.atm_occur
         # self.lin_classifier=nn.Linear(256,num_classes).double()
@@ -96,37 +117,39 @@ class HARmodel(nn.Module):
         x=self.relu(self.bn(x))
         x_mp=self.mp(x)
 
-        atom_x,ind=self.mp_atom(x)
+        atom_feat,ind=self.mp_atom(x)
+        atoms,indices,valid_atoms=self.atom_layer(atom_feat)
 
-        values,_=torch.sort(atom_x.view(-1),descending=True)
-        #select the threshold dynamically
-        bs,n_atoms,_=x.shape
-        threshold=values[bs*n_atoms*self.atom_occuranes].item()
+        # values,_=torch.sort(atom_feat.view(-1),descending=True)
+        # #select the threshold dynamically
+        # bs,n_atoms,_=x.shape
+        # threshold=values[bs*n_atoms*self.atom_occuranes].item()
+        # sorted_tensor, indices = torch.sort(atom_feat, dim=2,descending=True)
+        # indices=indices[:,:,:self.num_indices]
+        # atom_x=torch.gather(atom_feat,2,indices)
+        # atom_loc=torch.gather(ind,2,indices)
 
-        sorted_tensor, indices = torch.sort(atom_x, dim=2,descending=True)
-        indices=indices[:,:,:self.num_indices]
-        atom_x=torch.gather(atom_x,2,indices)
+        # feat=torch.zeros_like(atom_feat)
+        # ones=torch.ones_like(atom_feat)
+        # feat.scatter_(2, indices,ones)
 
-        valid_atoms=atom_x>threshold
-        valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, indices.shape[1])
+
+
+
+        # valid_atoms=atom_x>threshold
+        # valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, indices.shape[1])
         
+        # feat=torch.zeros_like(atom_feat)
+        # feat.scatter_(2, atom_loc, 1)
+
         pos_enc=self.pos_encoder(indices)
-        pos_enc=pos_enc*valid_atoms.int()
+        valid_atoms=torch.gather(valid_atoms,2,indices)
+        valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, pos_enc.shape[-1])
         pos_enc=pos_enc.view(pos_enc.shape[0],-1,pos_enc.shape[-1])
+        valid_atoms=valid_atoms.view(valid_atoms.shape[0],-1,valid_atoms.shape[-1])
 
-        #select the threshold dynamically
-        # _,ind=torch.sort(atom_x.view(-1),descending=True)
-        # pos_enc_=pos_enc[ind,:][:self.seq_len]
+        pos_enc=pos_enc*valid_atoms.int()
         pos_enc=pos_enc.swapaxes(0,1)
-        # d=torch.zeros(128,32,64).double().to(torch.device('cuda'))
-        # tr=self.transformer.to(torch.device('cuda'))
-        # tr(d)
         output=F.softmax(self.transformer(pos_enc)[-1,:,:],dim=1)
-        # output=F.softmax(self.lin_classifier(embs),dim=1)
-
-        # x=self.relu(self.embedding(x_mp))
-        # x=self.classifier(x)
-        # x=torch.mean(x,dim=2)
-        # output=F.softmax(x,dim=1)
             
         return output
