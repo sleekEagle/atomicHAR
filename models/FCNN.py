@@ -95,7 +95,6 @@ class HARmodel(nn.Module):
         self.relu=nn.ReLU()
         self.bn=nn.BatchNorm1d(64).double()
         self.mp1=nn.MaxPool1d(kernel_size=3,stride=1,return_indices=False)
-        self.mp_atom1=nn.MaxPool1d(kernel_size=5,stride=4,return_indices=True)
             
         self.cnn13=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
         self.cnn14=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
@@ -121,7 +120,7 @@ class HARmodel(nn.Module):
                                             num_classes,self.seqconf.dropout,self.device).double()
         elif self.seq_model=='BLSTM':
             print('BLSTM model')
-            self.bilstm = nn.LSTM(64,
+            self.bilstm = nn.LSTM(192,
                                   64,
                                   2,
                                   batch_first=True,
@@ -130,7 +129,9 @@ class HARmodel(nn.Module):
 
         self.num_indices=conf[dataset].model.atoms.num_indices
         self.atom_occuranes=conf[dataset].model.atoms.atm_occur
-        self.atom_layer=AtomLayer(self.atom_occuranes,self.num_indices)
+        self.atom_layer1=AtomLayer(self.atom_occuranes,self.num_indices)
+        self.atom_layer1=AtomLayer(self.atom_occuranes,self.num_indices)
+        self.atom_layer1=AtomLayer(self.atom_occuranes,self.num_indices)
 
         # self.lin_classifier=nn.Linear(256,num_classes).double()
 
@@ -139,24 +140,36 @@ class HARmodel(nn.Module):
         x=self.cnn12(x)
         x=self.relu(self.bn(x))
         x=self.mp1(x)
+        cnn1_out=x
 
         x=self.cnn13(x)
         x=self.cnn14(x)
         x=self.relu(self.bn(x))
         x=self.mp2(x)
+        cnn2_out=x
 
         x=self.cnn15(x)
         x=self.cnn16(x)
         x=self.relu(self.bn(x))
         x=self.mp3(x)
 
-        # atom_feat,ind=self.mp_atom1(x)
-        # atom_feat = (atom_feat)
-        atoms,indices,valid_atoms=self.atom_layer(x)
+        _,_,l=x.shape
+        bs,n,_=cnn1_out.shape
+        x1_resized = F.interpolate(cnn1_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
+        bs,n,_=cnn2_out.shape
+        x2_resized = F.interpolate(cnn2_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
+
+        atoms1,indices1,valid_atoms1=self.atom_layer(x1_resized)
+        atoms2,indices2,valid_atoms2=self.atom_layer(x2_resized)
+        atoms3,indices3,valid_atoms3=self.atom_layer(x)
+        atoms=torch.cat((atoms1,atoms2,atoms3),dim=1)
+        # cnn16_weights = self.cnn16.weight
+        # n,_,_=cnn16_weights.shape
+        # cnn16_weights=cnn16_weights.view(n,-1)
 
         if self.seq_model=='transformer':
-            pos_enc=self.pos_encoder(indices)
-            valid_atoms=torch.gather(valid_atoms,2,indices)
+            pos_enc=self.pos_encoder(indices3)
+            valid_atoms=torch.gather(valid_atoms,2,indices3)
             valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, pos_enc.shape[-1])
             pos_enc=pos_enc.view(pos_enc.shape[0],-1,pos_enc.shape[-1])
             valid_atoms=valid_atoms.view(valid_atoms.shape[0],-1,valid_atoms.shape[-1])
