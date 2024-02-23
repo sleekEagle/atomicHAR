@@ -1,0 +1,5 @@
+*.pyc
+multirun/
+outputs/
+wandb/
+launch.json
