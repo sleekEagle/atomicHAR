@@ -229,25 +229,41 @@ def get_dataloader(conf):
     window=conf.pamap2.window_len_s*conf.pamap2.sample_freq
     overlap=conf.pamap2.inv_overlap
 
-    train_subjects=conf.pamap2[conf.pamap2.train_subj]
     train_actions=conf.pamap2.train_ac
-    test_subjects=conf.pamap2[conf.pamap2.test_subj]
-    test_actions=conf.pamap2.test_ac
+    division_type=conf.pamap2.division_type
 
-    training_data=PAMAP2(data,
+    if division_type=='subject':
+        train_subjects=conf.pamap2[conf.pamap2.train_subj]
+        test_subjects=conf.pamap2[conf.pamap2.test_subj]
+        training_data=PAMAP2(data,
+                        actions=train_actions,
+                        subjects=train_subjects, 
+                        window_len=window, inv_overlap=overlap)
+        train_dataloader = DataLoader(training_data, batch_size=conf.pamap2.train_bs, shuffle=True)
+
+        test_data=PAMAP2(data,
+                        actions=train_actions,
+                        subjects=test_subjects,
+                        window_len=window,inv_overlap=overlap)
+        test_dataloader = DataLoader(test_data, batch_size=conf.pamap2.test_bs, shuffle=True)
+        #FSL data
+        fsl_subjects=conf.pamap2[conf.pamap2.FSL.test_subj]
+
+    elif division_type=='regular':
+        all_subj=conf.pamap2.group1+conf.pamap2.group2+conf.pamap2.group3
+        reagular_data=PAMAP2(data,
                     actions=train_actions,
-                    subjects=train_subjects, 
+                    subjects=all_subj, 
                     window_len=window, inv_overlap=overlap)
-    train_dataloader = DataLoader(training_data, batch_size=conf.pamap2.train_bs, shuffle=True)
-
-    test_data=PAMAP2(data,
-                    actions=test_actions,
-                    subjects=test_subjects,
-                    window_len=window,inv_overlap=overlap)
-    test_dataloader = DataLoader(test_data, batch_size=conf.pamap2.test_bs, shuffle=True)
-
+        train_len=int(len(reagular_data)*conf.pamap2.split)
+        test_len=len(reagular_data)-train_len
+        train_dataloader,test_dataloader = torch.utils.data.random_split(reagular_data, [train_len, test_len])
+        train_dataloader = DataLoader(train_dataloader, batch_size=conf.pamap2.train_bs, shuffle=True)
+        test_dataloader = DataLoader(test_dataloader, batch_size=conf.pamap2.test_bs, shuffle=True)
+        #use all subjects for few-shot learning
+        fsl_subjects=all_subj
+   
     #FSL data
-    fsl_subjects=conf.pamap2[conf.pamap2.FSL.test_subj]
     fsl_actions=conf.pamap2.FSL.test_ac
     fsl_overlap=conf.pamap2.FSL.inv_overlap
     fsl_data=PAMAP2(data,

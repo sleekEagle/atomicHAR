@@ -91,7 +91,7 @@ def main(conf : DictConfig) -> None:
     
     # athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
     num_classes=len(conf.pamap2.train_ac)
-    athar_model=FCNN.HARmodel(conf.pamap2,device)
+    athar_model=FCNN.HARmodel(conf,device)
     athar_model.to(device)
     MSE_loss_fn = nn.MSELoss()
     cls_loss_fn = nn.CrossEntropyLoss()

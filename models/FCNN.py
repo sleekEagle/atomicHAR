@@ -6,6 +6,13 @@ from torch import nn, Tensor
 from models.Transformer import TransformerModel
 import torch
 
+'''
+how LSTMs work:
+https://colah.github.io/posts/2015-08-Understanding-LSTMs/
+https://www.youtube.com/watch?v=LfnrRPFhkuY
+https://youtu.be/YCzL96nL7j0?si=agF25WbbCISxrajx
+'''
+
 class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
@@ -53,11 +60,13 @@ class AtomLayer(nn.Module):
         super(AtomLayer, self).__init__()
         self.atom_occuranes=atom_occuranes
         self.num_indices=num_indices
+        self.threshold = nn.Parameter(torch.tensor(0.8))
 
     def forward(self, x):
-        values,_=torch.sort(x.view(-1),descending=True)
-        bs,n_atoms,_=x.shape
-        threshold=values[bs*n_atoms*self.atom_occuranes].item()
+        # values,_=torch.sort(x.view(-1),descending=True)
+        # bs,n_atoms,_=x.shape
+        # threshold=values[bs*n_atoms*self.atom_occuranes].item()
+        threshold=self.threshold
         invalid_atoms=x<threshold
         x[invalid_atoms]=0
         sorted_tensor, indices = torch.sort(x, dim=2,descending=True)
@@ -76,80 +85,89 @@ class HARmodel(nn.Module):
         super().__init__()
 
         # Extract features, 1D conv layers
-        cnnconf=conf.model.cnn
-        num_classes=len(conf.train_ac)
-        self.cnn1=nn.Conv1d(in_channels=cnnconf.in_channels, out_channels=cnnconf.out_channels, kernel_size=cnnconf.kernel_size,stride=1).double()
-        self.cnn2=nn.Conv1d(in_channels=cnnconf.out_channels, out_channels=cnnconf.out_channels, kernel_size=cnnconf.kernel_size,stride=1).double()
+        dataset=conf.data.dataset
+        cnnconf=conf[dataset].model.cnn
+        num_classes=len(conf[dataset].train_ac)
+        #******block 1******
+        self.cnn11=nn.Conv1d(in_channels=cnnconf.in_channels, out_channels=64, kernel_size=3,stride=1).double()
+        self.cnn12=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
 
         self.relu=nn.ReLU()
         self.bn=nn.BatchNorm1d(64).double()
-        self.mp=nn.MaxPool1d(kernel_size=5,stride=2,return_indices=False)
-        self.mp_atom=nn.MaxPool1d(kernel_size=5,stride=4,return_indices=True)
+        self.mp1=nn.MaxPool1d(kernel_size=3,stride=1,return_indices=False)
+        self.mp_atom1=nn.MaxPool1d(kernel_size=5,stride=4,return_indices=True)
             
-        self.cnn3=nn.Conv1d(in_channels=cnnconf.out_channels, out_channels=cnnconf.out_channels, kernel_size=cnnconf.kernel_size,stride=1).double()
-        self.cnn4=nn.Conv1d(in_channels=cnnconf.out_channels, out_channels=cnnconf.num_atoms, kernel_size=2,stride=1).double()
+        self.cnn13=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
+        self.cnn14=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
+        self.mp2=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
+
+        self.cnn15=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
+        self.cnn16=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
+        self.mp3=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
+        #*******************
 
         self.embedding=nn.Conv1d(in_channels=cnnconf.num_atoms, out_channels=cnnconf.num_cls_features, kernel_size=2,stride=1).double()
         self.classifier=nn.Conv1d(in_channels=cnnconf.num_cls_features, out_channels=num_classes, kernel_size=3,stride=1).double()  
         self.num_classes=num_classes  
 
-        trnsconf=conf.model.transformer
-        self.pos_encoder=PositionalEncoding(int(trnsconf.d_model*0.5)).double()
-        self.device=device
-        self.transformer=TransformerModel(trnsconf.d_model,trnsconf.n_head,
-                                          trnsconf.dim_feedforward,trnsconf.num_layers,
-                                          num_classes,trnsconf.dropout,self.device).double()
-        self.atom_layer=AtomLayer(trnsconf.atm_occur,trnsconf.num_indices)
-        self.num_indices=trnsconf.num_indices
-        self.atom_occuranes=trnsconf.atm_occur
+        self.seq_model=conf.model.seq_model
+        self.seqconf=conf[dataset].model[self.seq_model]
+        if self.seq_model=='transformer':
+            print('transformer model')
+            self.pos_encoder=PositionalEncoding(int(self.seqconf.d_model*0.5)).double()
+            self.device=device
+            self.transformer=TransformerModel(self.seqconf.d_model,self.seqconf.n_head,
+                                            self.seqconf.dim_feedforward,self.seqconf.num_layers,
+                                            num_classes,self.seqconf.dropout,self.device).double()
+        elif self.seq_model=='BLSTM':
+            print('BLSTM model')
+            self.bilstm = nn.LSTM(64,
+                                  64,
+                                  2,
+                                  batch_first=True,
+                                  bidirectional=True).double()
+            self.blstm_lin = nn.Linear(128, self.num_classes).double()
+
+        self.num_indices=conf[dataset].model.atoms.num_indices
+        self.atom_occuranes=conf[dataset].model.atoms.atm_occur
+        self.atom_layer=AtomLayer(self.atom_occuranes,self.num_indices)
+
         # self.lin_classifier=nn.Linear(256,num_classes).double()
 
     def forward(self, x):
-        x=self.cnn1(x)
-        x=self.cnn2(x)
+        x=self.cnn11(x)
+        x=self.cnn12(x)
         x=self.relu(self.bn(x))
-        # atom_args=torch.argwhere(x>1.01)
-        # diff_t=torch.diff(atom_args,dim=1)
-        x=self.mp(x)
+        x=self.mp1(x)
 
-        x=self.cnn3(x)
-        x=self.cnn4(x)
+        x=self.cnn13(x)
+        x=self.cnn14(x)
         x=self.relu(self.bn(x))
-        x_mp=self.mp(x)
+        x=self.mp2(x)
 
-        atom_feat,ind=self.mp_atom(x)
-        atoms,indices,valid_atoms=self.atom_layer(atom_feat)
+        x=self.cnn15(x)
+        x=self.cnn16(x)
+        x=self.relu(self.bn(x))
+        x=self.mp3(x)
 
-        # values,_=torch.sort(atom_feat.view(-1),descending=True)
-        # #select the threshold dynamically
-        # bs,n_atoms,_=x.shape
-        # threshold=values[bs*n_atoms*self.atom_occuranes].item()
-        # sorted_tensor, indices = torch.sort(atom_feat, dim=2,descending=True)
-        # indices=indices[:,:,:self.num_indices]
-        # atom_x=torch.gather(atom_feat,2,indices)
-        # atom_loc=torch.gather(ind,2,indices)
+        # atom_feat,ind=self.mp_atom1(x)
+        # atom_feat = (atom_feat)
+        atoms,indices,valid_atoms=self.atom_layer(x)
 
-        # feat=torch.zeros_like(atom_feat)
-        # ones=torch.ones_like(atom_feat)
-        # feat.scatter_(2, indices,ones)
+        if self.seq_model=='transformer':
+            pos_enc=self.pos_encoder(indices)
+            valid_atoms=torch.gather(valid_atoms,2,indices)
+            valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, pos_enc.shape[-1])
+            pos_enc=pos_enc.view(pos_enc.shape[0],-1,pos_enc.shape[-1])
+            valid_atoms=valid_atoms.view(valid_atoms.shape[0],-1,valid_atoms.shape[-1])
 
-
-
-
-        # valid_atoms=atom_x>threshold
-        # valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, indices.shape[1])
-        
-        # feat=torch.zeros_like(atom_feat)
-        # feat.scatter_(2, atom_loc, 1)
-
-        pos_enc=self.pos_encoder(indices)
-        valid_atoms=torch.gather(valid_atoms,2,indices)
-        valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, pos_enc.shape[-1])
-        pos_enc=pos_enc.view(pos_enc.shape[0],-1,pos_enc.shape[-1])
-        valid_atoms=valid_atoms.view(valid_atoms.shape[0],-1,valid_atoms.shape[-1])
-
-        pos_enc=pos_enc*valid_atoms.int()
-        pos_enc=pos_enc.swapaxes(0,1)
-        output=F.softmax(self.transformer(pos_enc)[-1,:,:],dim=1)
-            
-        return output
+            pos_enc=pos_enc*valid_atoms.int()
+            pos_enc=pos_enc.swapaxes(0,1)
+            pred=F.softmax(self.transformer(pos_enc)[-1,:,:],dim=1)
+        elif self.seq_model=='BLSTM':
+            atoms=atoms.swapaxes(1,2)
+            # print('BLSTM model')
+            output, (hn, cn)=self.bilstm(atoms)
+            last_out=output[:,-1,:]
+            pred=F.softmax(self.blstm_lin(last_out),dim=1)
+        return pred

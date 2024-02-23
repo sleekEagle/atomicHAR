@@ -7,6 +7,7 @@ data:
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\model.pth
   epochs: 100000
+  seq_model: BLSTM #transformer or BLSTM or cnn
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
@@ -37,11 +38,12 @@ utdmhad:
 pamap2:
   path: C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\
   data_types: ['Protocol']
+  division_type: 'regular' # 'subject':different subjects for train and test 'regular': divide the whole dataset into two parts 
+  split: 0.8 #train:test split. Only used when division_type is 'regular'
   group1: [101,102,103]
   group2: [104,105,106]
   group3: [107,108,109]
   train_ac: [1,3,4,5,12,16,24]
-  test_ac: [1,3,4,5,12,16,24]
   train_subj: group1
   test_subj: group2
   FSL:
@@ -55,6 +57,14 @@ pamap2:
   inv_overlap: 0.5
   sample_freq: 100
   model:
+    atoms:
+      #atomic HAR configs
+      num_indices: 2  #number of max indices to use per sequence
+      #the sequence length = num_indices * num_atoms (i.e the number of filters in the last cnn layer)
+      atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
+    BLSTM:
+      hidden_size: 32
+      num_layers: 2
     transformer: 
       d_model: 64
       num_layers: 1
@@ -62,14 +72,14 @@ pamap2:
       dropout: 0.2
       dim_feedforward: 64
       d_out: 32
-      #atomic HAR configs
-      num_indices: 2  #number of max indices to use per sequence
-      #the sequence length = num_indices * num_atoms (i.e the number of filters in the last cnn layer)
-      atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
     cnn:
       in_channels: 6
-      out_channels: 64
-      kernel_size: 3
+      channels1: 64
+      dropout: 0.2
+      channels2: 32
+      kernel_size1: 3
+      kernel_size2: 7
+      kernel_size3: 11
       num_cls_features: 128
       #imu_feat_dim must be divisible by 4
       imu_feat_dim: 32
