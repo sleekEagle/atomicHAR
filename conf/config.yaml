@@ -64,8 +64,9 @@ pamap2:
       #the sequence length = num_indices * num_atoms (i.e the number of filters in the last cnn layer)
       atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
     BLSTM:
-      hidden_size: 32
+      hidden_size: 64
       num_layers: 2
+      dense: 128
     transformer: 
       d_model: 64
       num_layers: 1
