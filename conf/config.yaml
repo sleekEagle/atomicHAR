@@ -38,7 +38,7 @@ utdmhad:
 pamap2:
   path: C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\
   data_types: ['Protocol']
-  normalize: False
+  normalize: True
   division_type: 'regular' # 'subject':different subjects for train and test 'regular': divide the whole dataset into two parts 
   split: 0.8 #train:test split. Only used when division_type is 'regular'
   group1: [101,102,103]
