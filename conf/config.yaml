@@ -48,7 +48,7 @@ pamap2:
   train_subj: group1
   test_subj: group2
   FSL:
-    test_subj: group1
+    test_subj: group2
     test_ac: [2,6,7,13,17]
     inv_overlap: 1 #(1-overlap) between the windows. i.e 1 for no overlap, 0.5 for 50% overlap
     n_shot: 5

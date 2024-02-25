@@ -291,7 +291,7 @@ def get_dataloader(conf):
     #FSL data
     fsl_actions=conf.pamap2.FSL.test_ac
     fsl_overlap=conf.pamap2.FSL.inv_overlap
-
+    fsl_subjects=conf.pamap2[conf.pamap2.FSL.test_subj]
     fsl_data=PAMAP2(data,
                     actions=fsl_actions,
                     subjects=fsl_subjects,
