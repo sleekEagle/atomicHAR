@@ -177,6 +177,7 @@ def main(conf : DictConfig) -> None:
             log.info(f"test accuracy: {eval_out:.2f}")
 
     fls_acc=FSLtest.get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
+    log.info(f'FSL accuracy is {fls_acc:.2f}')
     if conf.data.wandb:
         wandb.log({'loss':min_loss})
     return fls_acc

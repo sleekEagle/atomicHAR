@@ -79,7 +79,7 @@ class HARmodel(nn.Module):
     """Model for human-activity-recognition."""
     def __init__(self,conf,device):
         super().__init__()
-
+        self.device=device
         # Extract features, 1D conv layers
         dataset=conf.data.dataset
         cnnconf=conf[dataset].model.cnn
@@ -111,7 +111,6 @@ class HARmodel(nn.Module):
         if self.seq_model=='transformer':
             print('transformer model')
             self.pos_encoder=PositionalEncoding(int(self.seqconf.d_model*0.5)).double()
-            self.device=device
             self.transformer=TransformerModel(self.seqconf.d_model,self.seqconf.n_head,
                                             self.seqconf.dim_feedforward,self.seqconf.num_layers,
                                             num_classes,self.seqconf.dropout,self.device).double()
@@ -163,9 +162,18 @@ class HARmodel(nn.Module):
         atoms2,indices2,valid_atoms2=self.atom_layer2(x2_resized)
         atoms3,indices3,valid_atoms3=self.atom_layer3(x)
         atoms=torch.cat((atoms1,atoms2,atoms3),dim=1)
+
+        #make random atoms zero 
+        num_elements = 5
+        n_atoms=atoms.shape[1]
+        ind=torch.arange(n_atoms).unsqueeze(0).repeat(bs,1).double()
+        ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,atoms.shape[2]).to(self.device)
+        atoms.scatter_(1,ind_sel,0)
+
         # cnn16_weights = self.cnn16.weight
         # n,_,_=cnn16_weights.shape
         # cnn16_weights=cnn16_weights.view(n,-1)
+
 
         if self.seq_model=='transformer':
             pos_enc=self.pos_encoder(indices3)

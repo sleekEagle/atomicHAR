@@ -6,7 +6,7 @@ data:
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
-  epochs: 2
+  epochs: 10
   seq_model: BLSTM #transformer or BLSTM or cnn
 
 utdmhad:
@@ -62,6 +62,7 @@ pamap2:
       num_indices: 1  #number of max indices to use per sequence
       #the sequence length = num_indices * num_atoms (i.e the number of filters in the last cnn layer)
       atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
+      hide_frac: 0.5 #max fraction of atoms to hide each time
     BLSTM:
       hidden_size: 64
       num_layers: 1
