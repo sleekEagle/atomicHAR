@@ -56,16 +56,12 @@ class PositionalEncoding(nn.Module):
         return self.dropout(emb)
 
 class AtomLayer(nn.Module):
-    def __init__(self, atom_occuranes,num_indices):
+    def __init__(self,num_indices):
         super(AtomLayer, self).__init__()
-        self.atom_occuranes=atom_occuranes
         self.num_indices=num_indices
         self.threshold = nn.Parameter(torch.tensor(0.8))
 
     def forward(self, x):
-        # values,_=torch.sort(x.view(-1),descending=True)
-        # bs,n_atoms,_=x.shape
-        # threshold=values[bs*n_atoms*self.atom_occuranes].item()
         threshold=self.threshold
         invalid_atoms=x<threshold
         x[invalid_atoms]=0
@@ -95,6 +91,7 @@ class HARmodel(nn.Module):
         self.relu=nn.ReLU()
         self.bn=nn.BatchNorm1d(64).double()
         self.mp1=nn.MaxPool1d(kernel_size=3,stride=1,return_indices=False)
+        self.dropout = nn.Dropout(p=0.2)
             
         self.cnn13=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
         self.cnn14=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
@@ -119,19 +116,22 @@ class HARmodel(nn.Module):
                                             self.seqconf.dim_feedforward,self.seqconf.num_layers,
                                             num_classes,self.seqconf.dropout,self.device).double()
         elif self.seq_model=='BLSTM':
+            blstmconf=conf[dataset].model.BLSTM
             print('BLSTM model')
             self.bilstm = nn.LSTM(192,
-                                  64,
-                                  2,
+                                  blstmconf.hidden_size,
+                                  blstmconf.num_layers,
                                   batch_first=True,
                                   bidirectional=True).double()
-            self.blstm_lin = nn.Linear(128, self.num_classes).double()
+            self.blstm_lin = nn.Linear(blstmconf.hidden_size*2, blstmconf.dense).double()
+            self.blstm_bn=nn.BatchNorm1d(blstmconf.dense).double()
+            self.blstm_cls = nn.Linear(blstmconf.dense, self.num_classes).double()
 
         self.num_indices=conf[dataset].model.atoms.num_indices
         self.atom_occuranes=conf[dataset].model.atoms.atm_occur
-        self.atom_layer1=AtomLayer(self.atom_occuranes,self.num_indices)
-        self.atom_layer1=AtomLayer(self.atom_occuranes,self.num_indices)
-        self.atom_layer1=AtomLayer(self.atom_occuranes,self.num_indices)
+        self.atom_layer1=AtomLayer(self.num_indices)
+        self.atom_layer2=AtomLayer(self.num_indices)
+        self.atom_layer3=AtomLayer(self.num_indices)
 
         # self.lin_classifier=nn.Linear(256,num_classes).double()
 
@@ -159,9 +159,9 @@ class HARmodel(nn.Module):
         bs,n,_=cnn2_out.shape
         x2_resized = F.interpolate(cnn2_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
 
-        atoms1,indices1,valid_atoms1=self.atom_layer(x1_resized)
-        atoms2,indices2,valid_atoms2=self.atom_layer(x2_resized)
-        atoms3,indices3,valid_atoms3=self.atom_layer(x)
+        atoms1,indices1,valid_atoms1=self.atom_layer1(x1_resized)
+        atoms2,indices2,valid_atoms2=self.atom_layer2(x2_resized)
+        atoms3,indices3,valid_atoms3=self.atom_layer3(x)
         atoms=torch.cat((atoms1,atoms2,atoms3),dim=1)
         # cnn16_weights = self.cnn16.weight
         # n,_,_=cnn16_weights.shape
@@ -182,5 +182,7 @@ class HARmodel(nn.Module):
             # print('BLSTM model')
             output, (hn, cn)=self.bilstm(atoms)
             last_out=output[:,-1,:]
-            pred=F.softmax(self.blstm_lin(last_out),dim=1)
+            lin=self.blstm_lin(last_out)
+            lin_bn=self.blstm_bn(lin)
+            pred=F.softmax(self.blstm_cls(lin_bn),dim=1)
         return pred

@@ -13,6 +13,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 import logging
 import random
 import utils
+import os
 # A logger for this file
 log = logging.getLogger(__name__)
 
@@ -82,9 +83,10 @@ def main(conf : DictConfig) -> None:
     else:
         device = torch.device("cpu")
     
-    if conf.data.dataset=='utdmhad': 
+    dataset=conf.data.dataset
+    if dataset=='utdmhad': 
         train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
-    elif conf.data.dataset=='pamap2': 
+    elif dataset=='pamap2': 
         train_dataloader,test_dataloader,fsl_train_dataloader,fsl_test_dataloader=PAMAP2.get_dataloader(conf)
 
     print('dataloaders obtained...')
@@ -98,6 +100,14 @@ def main(conf : DictConfig) -> None:
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
     # optimizer = optim.SGD(athar_model.parameters(), lr=0.001, momentum=0.9)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
+    model_path=conf.model.save_path
+    if dataset=='pamap2':
+        if conf[dataset].division_type=='regular':
+            model_path=os.path.join(model_path,'pamap2_regular.pth')
+        elif conf[dataset].division_type=='subject':
+            train_s=conf[dataset].train_subj
+            test_s=conf[dataset].test_subj
+            model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
 
     lr=get_lr(optimizer)
     log.info(f'new lr={lr}')
@@ -123,7 +133,7 @@ def main(conf : DictConfig) -> None:
             if conf.data.dataset=='utdmhad': 
                 imu,xyz,imu_mask,xyz_mask,imu_len,activity=input
             elif conf.data.dataset=='pamap2':
-                imu,activity=input
+                imu,activity_original,activity=input
                 activity_oh=utils.get_onehot(activity,num_classes).to(device)
 
             optimizer.zero_grad()
@@ -153,7 +163,7 @@ def main(conf : DictConfig) -> None:
         if mean_loss<min_loss:
             log.info('saving model...')
             min_loss=mean_loss
-            torch.save(athar_model.state_dict(),conf.model.save_path)
+            torch.save(athar_model.state_dict(),model_path)
 
         # print(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
         if conf.data.wandb:

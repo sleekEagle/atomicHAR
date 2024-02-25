@@ -128,7 +128,7 @@ def load_subjects(path,dir):
     return output
 
 def get_data_split(data,subject_list,action_list):
-    condition=data['activity'].isin(action_list) & data['id'].isin(subject_list)
+    condition=data['activity_id'].isin(action_list) & data['id'].isin(subject_list)
     data_selected=data[condition]
     return data_selected
 
@@ -152,11 +152,14 @@ class PAMAP2(Dataset):
         self.data_split=get_data_split(data,subjects,actions)
         self.data_split = self.data_split.reset_index(drop=True)
 
+        #rename activities to vary from 0 to n
+        self.new_actions=np.arange(len(actions))
         sub_ac_start_idx=[]
+        actions=np.array(actions)
         for sub in subjects:
             for a in actions:
                 print(f"subject: {sub}, activity: {a}")
-                condition=(self.data_split['id']==sub) & (self.data_split['activity']==a)
+                condition=(self.data_split['id']==sub) & (self.data_split['activity_id']==a)
                 indices=self.data_split[condition].index.to_numpy()
                 indices=indices[0:-self.window_len]
                 start_idx=indices[::int(self.window_len*self.inv_overlap)]  
@@ -164,6 +167,7 @@ class PAMAP2(Dataset):
                     sub_ac_start_idx.append([sub,a,i])
         self.sub_ac_start_idx=sub_ac_start_idx
 
+        # new_action=new_actions[np.where(actions==a)[0][0]]
         #get all participant and activity posibilities
         # subj_list,ac_list=[],[]
         # for s in self.subjects:
@@ -195,8 +199,9 @@ class PAMAP2(Dataset):
     def __getitem__(self, idx):
         #select an activity and a subject
         subject=self.sub_ac_start_idx[idx][0]
-        activity=self.sub_ac_start_idx[idx][1]
+        activity_original=self.sub_ac_start_idx[idx][1]
         start_idx=self.sub_ac_start_idx[idx][2]
+        activity_remapped=self.new_actions[np.where(self.actions==activity_original)[0][0]]
         # condition=(self.data_split['id']==subject) & (self.data_split['activity']==activity)
         data_sample=self.data_split.iloc[start_idx:start_idx+self.window_len]
         if data_sample.shape[0]==0:
@@ -233,7 +238,7 @@ class PAMAP2(Dataset):
             max_vals=np.repeat(np.expand_dims(np.array(self.max_vals),axis=1),repeats=l,axis=1)
             min_vals=np.repeat(np.expand_dims(np.array(self.min_vals),axis=1),repeats=l,axis=1)
             data_sample=(data_sample-min_vals)/(max_vals-min_vals)
-        return data_sample,activity
+        return data_sample,activity_original,activity_remapped
 
 def get_dataloader(conf):
     df_list=[]
@@ -244,7 +249,7 @@ def get_dataloader(conf):
         protocol_data = load_subjects(conf.pamap2.path,'Protocol')
         df_list.append(protocol_data)
     data = pd.concat(df_list, ignore_index=True) 
-    data['activity']=pd.factorize(data['activity_id'])[0]
+    # data['activity']=pd.factorize(data['activity_id'])[0]
     
     window=conf.pamap2.window_len_s*conf.pamap2.sample_freq
     overlap=conf.pamap2.inv_overlap
@@ -286,17 +291,14 @@ def get_dataloader(conf):
     #FSL data
     fsl_actions=conf.pamap2.FSL.test_ac
     fsl_overlap=conf.pamap2.FSL.inv_overlap
+
     fsl_data=PAMAP2(data,
                     actions=fsl_actions,
                     subjects=fsl_subjects,
                     window_len=window,inv_overlap=fsl_overlap,normalize=conf.pamap2.normalize)
-    fsl_train_size=conf.pamap2.FSL.n_shot
-    fsl_test_size=len(fsl_data)-fsl_train_size
-    fsl_train_dataloader,fsl_test_dataloader = torch.utils.data.random_split(fsl_data, [fsl_train_size, fsl_test_size])
-    fsl_train_dataloader = DataLoader(fsl_train_dataloader, batch_size=len(fsl_train_dataloader), shuffle=True)
-    fsl_test_dataloader = DataLoader(fsl_test_dataloader, batch_size=len(fsl_test_dataloader), shuffle=True)
-
-    return train_dataloader,test_dataloader,fsl_train_dataloader,fsl_test_dataloader
+    fsl_dataloader = DataLoader(fsl_data, batch_size=len(fsl_data), shuffle=True)
+    
+    return train_dataloader,test_dataloader,fsl_dataloader
 
 
 
