@@ -37,3 +37,12 @@ def eval(conf,model,dataloader,device):
         acc=get_acc(output,activity_oh)
         mean_acc+=acc
     return mean_acc/len(dataloader)
+
+def get_model_path(conf):
+    model_path=conf.model.save_path
+    dataset=conf.data.dataset
+    if dataset=='pamap2':
+        train_s='train_g_'+','.join([item[-1:] for item in conf[dataset].train_subj])
+        test_s='test_g_'+','.join([item[-1:] for item in conf[dataset].test_subj])
+        model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
+    return model_path

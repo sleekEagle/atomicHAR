@@ -43,14 +43,16 @@ def main(conf : DictConfig) -> None:
         _,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
 
     #load weights
-    model_path=conf.model.save_path
-    if dataset=='pamap2':
-        if conf[dataset].division_type=='regular':
-            model_path=os.path.join(model_path,'pamap2_regular.pth')
-        elif conf[dataset].division_type=='subject':
-            train_s=conf[dataset].train_subj
-            test_s=conf[dataset].test_subj
-            model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
+    model_path=utils.get_model_path(conf)
+
+    # model_path=conf.model.save_path
+    # if dataset=='pamap2':
+    #     if conf[dataset].division_type=='regular':
+    #         model_path=os.path.join(model_path,'pamap2_regular.pth')
+    #     elif conf[dataset].division_type=='subject':
+    #         train_s=conf[dataset].train_subj
+    #         test_s=conf[dataset].test_subj
+    #         model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
 
     athar_model=FCNN.HARmodel(conf,device)
     checkpoint = torch.load(model_path)

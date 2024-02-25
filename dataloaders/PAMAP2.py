@@ -7,6 +7,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch
+import itertools
 
 '''
 adapted from 
@@ -255,43 +256,45 @@ def get_dataloader(conf):
     overlap=conf.pamap2.inv_overlap
 
     train_actions=conf.pamap2.train_ac
-    division_type=conf.pamap2.division_type
 
-    if division_type=='subject':
-        train_subjects=conf.pamap2[conf.pamap2.train_subj]
-        test_subjects=conf.pamap2[conf.pamap2.test_subj]
-        training_data=PAMAP2(data,
-                        actions=train_actions,
-                        subjects=train_subjects, 
-                        window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
-        train_dataloader = DataLoader(training_data, batch_size=conf.pamap2.train_bs, shuffle=True)
+    def get_comb_sub_list(conf,sub_list):
+        return list(itertools.chain.from_iterable([conf.pamap2[item] for item in sub_list]))
 
-        test_data=PAMAP2(data,
-                        actions=train_actions,
-                        subjects=test_subjects,
-                        window_len=window,inv_overlap=overlap,normalize=conf.pamap2.normalize)
-        test_dataloader = DataLoader(test_data, batch_size=conf.pamap2.test_bs, shuffle=True)
-        #FSL data
-        fsl_subjects=conf.pamap2[conf.pamap2.FSL.test_subj]
+    train_subjects=get_comb_sub_list(conf,conf.pamap2.train_subj)
+    test_subjects=get_comb_sub_list(conf,conf.pamap2.test_subj)
+    split=conf.pamap2.split
+    #get overlapping subjects
+    non_overlapping_train_subjects = list(set(train_subjects).difference(test_subjects))
+    overlapping_subjects=list(set(train_subjects).intersection(test_subjects))
+    non_overlapping_test_subjects=list(set(test_subjects).difference(train_subjects))
 
-    elif division_type=='regular':
-        all_subj=conf.pamap2.group1+conf.pamap2.group2+conf.pamap2.group3
-        reagular_data=PAMAP2(data,
+    non_overlapping_train_data=PAMAP2(data,
                     actions=train_actions,
-                    subjects=all_subj, 
+                    subjects=non_overlapping_train_subjects, 
                     window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
-        train_len=int(len(reagular_data)*conf.pamap2.split)
-        test_len=len(reagular_data)-train_len
-        train_dataloader,test_dataloader = torch.utils.data.random_split(reagular_data, [train_len, test_len])
-        train_dataloader = DataLoader(train_dataloader, batch_size=conf.pamap2.train_bs, shuffle=True)
-        test_dataloader = DataLoader(test_dataloader, batch_size=conf.pamap2.test_bs, shuffle=True)
-        #use all subjects for few-shot learning
-        fsl_subjects=all_subj
+    overlapping_data=PAMAP2(data,
+                    actions=train_actions,
+                    subjects=overlapping_subjects, 
+                    window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
+    non_overlapping_test_data=PAMAP2(data,
+            actions=train_actions,
+            subjects=non_overlapping_test_subjects, 
+            window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
+
+    #divide overlapping data 
+    train_len=int(len(overlapping_data)*split)
+    test_len=len(overlapping_data)-train_len
+    train_data,test_data=torch.utils.data.random_split(overlapping_data, [train_len, test_len])
+    train_data = torch.utils.data.ConcatDataset([train_data, non_overlapping_train_data])
+    test_data = torch.utils.data.ConcatDataset([test_data, non_overlapping_test_data])
+
+    train_dataloader = DataLoader(train_data, batch_size=conf.pamap2.train_bs, shuffle=True)
+    test_dataloader = DataLoader(test_data, batch_size=conf.pamap2.test_bs, shuffle=True)
    
     #FSL data
     fsl_actions=conf.pamap2.FSL.test_ac
     fsl_overlap=conf.pamap2.FSL.inv_overlap
-    fsl_subjects=conf.pamap2[conf.pamap2.FSL.test_subj]
+    fsl_subjects=get_comb_sub_list(conf,conf.pamap2.FSL.test_subj)
     fsl_data=PAMAP2(data,
                     actions=fsl_actions,
                     subjects=fsl_subjects,

@@ -87,7 +87,7 @@ def main(conf : DictConfig) -> None:
     if dataset=='utdmhad': 
         train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     elif dataset=='pamap2': 
-        train_dataloader,test_dataloader,fsl_train_dataloader,fsl_test_dataloader=PAMAP2.get_dataloader(conf)
+        train_dataloader,test_dataloader,_=PAMAP2.get_dataloader(conf)
 
     print('dataloaders obtained...')
     
@@ -100,14 +100,7 @@ def main(conf : DictConfig) -> None:
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
     # optimizer = optim.SGD(athar_model.parameters(), lr=0.001, momentum=0.9)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
-    model_path=conf.model.save_path
-    if dataset=='pamap2':
-        if conf[dataset].division_type=='regular':
-            model_path=os.path.join(model_path,'pamap2_regular.pth')
-        elif conf[dataset].division_type=='subject':
-            train_s=conf[dataset].train_subj
-            test_s=conf[dataset].test_subj
-            model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
+    model_path=utils.get_model_path(conf)
 
     lr=get_lr(optimizer)
     log.info(f'new lr={lr}')
