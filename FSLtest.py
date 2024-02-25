@@ -93,7 +93,7 @@ def main(conf : DictConfig) -> None:
 
         pred=knn.predict(data)
         acc+=np.sum(pred==labels)/len(labels)
-    print(f'FSL accuracy is {acc/n:.2f}')
+    print(f'FSL accuracy is {acc/n:.2f}  #runs={n}')
 
 if __name__ == "__main__":
     main()
