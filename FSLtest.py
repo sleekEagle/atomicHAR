@@ -24,35 +24,11 @@ def hook(module, input, output):
     global feature_output
     feature_output = output
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
-def main(conf : DictConfig) -> None:
-    # Check if the specified GPU is available
-    if torch.cuda.is_available():
-        n_gpus=torch.cuda.device_count()
-        assert conf.gpu_index<n_gpus, f"The specified GPU index is not available. Available n GPUs: {n_gpus}"
-        gpu_index=min(conf.gpu_index,n_gpus-1)
-        device = torch.device(f"cuda:{gpu_index}")
-    else:
-        device = torch.device("cpu")
 
-    #load data
-    dataset=conf.data.dataset
-    if dataset=='utdmhad': 
-        train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
-    elif dataset=='pamap2': 
-        _,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
-
-    #load weights
+def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader):
+     #load weights
     model_path=utils.get_model_path(conf)
-
-    # model_path=conf.model.save_path
-    # if dataset=='pamap2':
-    #     if conf[dataset].division_type=='regular':
-    #         model_path=os.path.join(model_path,'pamap2_regular.pth')
-    #     elif conf[dataset].division_type=='subject':
-    #         train_s=conf[dataset].train_subj
-    #         test_s=conf[dataset].test_subj
-    #         model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
+    print(f'loading model from {model_path}...')
 
     athar_model=FCNN.HARmodel(conf,device)
     checkpoint = torch.load(model_path)
@@ -64,7 +40,7 @@ def main(conf : DictConfig) -> None:
     eval_out=utils.eval(conf,athar_model,test_dataloader,device)
     print(f'test accuracy={eval_out:.2f}%')
 
-    #*****************train the FSL classifier***************
+     #*****************train the FSL classifier***************
     #get fsl train data
     for batch in fsl_dataloader:
         imu,activity_original,activity_remapped = batch
@@ -96,6 +72,29 @@ def main(conf : DictConfig) -> None:
         pred=knn.predict(data)
         acc+=np.sum(pred==labels)/len(labels)
     print(f'FSL accuracy is {acc/n:.2f}  #runs={n}')
+    return acc/n
+    
+
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(conf : DictConfig) -> None:
+    # Check if the specified GPU is available
+    if torch.cuda.is_available():
+        n_gpus=torch.cuda.device_count()
+        assert conf.gpu_index<n_gpus, f"The specified GPU index is not available. Available n GPUs: {n_gpus}"
+        gpu_index=min(conf.gpu_index,n_gpus-1)
+        device = torch.device(f"cuda:{gpu_index}")
+    else:
+        device = torch.device("cpu")
+
+    #load data
+    dataset=conf.data.dataset
+    if dataset=='utdmhad': 
+        train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
+    elif dataset=='pamap2': 
+        _,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
+
+    get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
+
 
 if __name__ == "__main__":
     main()

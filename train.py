@@ -14,6 +14,7 @@ import logging
 import random
 import utils
 import os
+import FSLtest
 # A logger for this file
 log = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def main(conf : DictConfig) -> None:
     if dataset=='utdmhad': 
         train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
     elif dataset=='pamap2': 
-        train_dataloader,test_dataloader,_=PAMAP2.get_dataloader(conf)
+        train_dataloader,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
 
     print('dataloaders obtained...')
     
@@ -142,9 +143,6 @@ def main(conf : DictConfig) -> None:
             mean_loss+=loss.item()
             mean_imu_loss+=cls_loss.item()
             mean_acc+=acc
-            # mean_forcast_loss+=forcast_loss.item()
-            # mean_atom_loss+=atom_loss.item()
-            # mean_cls_loss+=cls_loss.item()
 
         mean_loss=mean_loss/len(train_dataloader)
         mean_imu_loss=mean_imu_loss/len(train_dataloader)
@@ -178,32 +176,10 @@ def main(conf : DictConfig) -> None:
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
             log.info(f"test accuracy: {eval_out:.2f}")
 
-        #*************eval*******************
-        # eval_out=utils.eval(athar_model,test_dataloader)
-        # eval_imu_loss=eval_out['imu_loss']
-        # eval_forcast_loss=eval_out['forcast_loss']
-        # eval_atom_loss=eval_out['atom_loss']
-        # print(f'Eval metrics: IMU loss = {eval_imu_loss:.5f},forcast loss= {eval_forcast_loss:.5f}, atom loss= {eval_atom_loss:.5f}')
-        # wandb.log({"eval_IMU_loss": eval_imu_loss,
-        #     "eval_forcast_loss": eval_forcast_loss,
-        #     "eval_atom loss":eval_atom_loss})
-        #************************************
-
-        
-    # real=torch.reshape(output['forcast_real'],(2,20,-1))
-    # forcast=torch.reshape(output['forcast'],(2,20,-1))
-    # d=(real-forcast)
-    # d=torch.mean(d,dim=2)
-    # d_plot=d[0,:].detach().cpu().numpy()
-
-
-
-    # print(result.shape)
-    # plt.plot(result.detach().cpu().numpy()[0,0,:])
-    # plt.plot(imu[0,0,:].detach().cpu().numpy())
+    fls_acc=FSLtest.get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
     if conf.data.wandb:
         wandb.log({'loss':min_loss})
-    return min_loss
+    return fls_acc
 
 if __name__ == "__main__":
     main()

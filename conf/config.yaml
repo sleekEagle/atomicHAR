@@ -6,7 +6,7 @@ data:
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
-  epochs: 100000
+  epochs: 2
   seq_model: BLSTM #transformer or BLSTM or cnn
 
 utdmhad:
@@ -64,8 +64,8 @@ pamap2:
       atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
     BLSTM:
       hidden_size: 64
-      num_layers: 2
-      dense: 128
+      num_layers: 1
+      dense: 64
     transformer: 
       d_model: 64
       num_layers: 1
