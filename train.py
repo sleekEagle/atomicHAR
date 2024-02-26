@@ -68,7 +68,7 @@ def main(conf : DictConfig) -> None:
         wandb_conf = OmegaConf.to_container(
             conf, resolve=True, throw_on_missing=True
         )
-        wandb.init(project="atomicHAR",
+        wandb.init(project="atomicHAR-project",
                 config=wandb_conf,
                 )
     # conf=conf.params
@@ -156,14 +156,6 @@ def main(conf : DictConfig) -> None:
             min_loss=mean_loss
             torch.save(athar_model.state_dict(),model_path)
 
-        # print(f'IMU loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
-        if conf.data.wandb:
-            wandb.log({"IMU_loss": mean_imu_loss,
-                "forcast_loss": mean_forcast_loss,
-                "cls_loss": mean_cls_loss,
-                "atom loss":mean_atom_loss,
-                'accuracy':acc})
-        # plot_seg(imu,output['seg_len_list'])
         log.info(f'Epoch={epoch}, loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
         mean_loss=0
         mean_imu_loss=0
@@ -176,11 +168,11 @@ def main(conf : DictConfig) -> None:
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
             log.info(f"test accuracy: {eval_out:.2f}")
 
-    fls_acc=FSLtest.get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
-    log.info(f'FSL accuracy is {fls_acc:.2f}')
+    fsl_acc=FSLtest.get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
+    log.info(f'FSL accuracy is {fsl_acc:.2f}')
     if conf.data.wandb:
-        wandb.log({'loss':min_loss})
-    return fls_acc
+        wandb.log({'fsl_acc':fsl_acc})
+    return fsl_acc
 
 if __name__ == "__main__":
     main()

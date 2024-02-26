@@ -2,11 +2,12 @@ gpu_index: 0
 data:
   dataset: pamap2
   num_sensors: 6
-  wandb: False
+  wandb: True
+  wandb_name: atomicHAR
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
-  epochs: 10
+  epochs: 1
   seq_model: BLSTM #transformer or BLSTM or cnn
 
 utdmhad:
@@ -64,7 +65,7 @@ pamap2:
       atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
       hide_frac: 0.5 #max fraction of atoms to hide each time
     BLSTM:
-      hidden_size: 64
+      hidden_size: 256
       num_layers: 1
       dense: 64
     transformer: 
@@ -77,7 +78,7 @@ pamap2:
     cnn:
       in_channels: 36
       channels1: 64
-      dropout: 0.2
+      dropout: [1,1,1]
       channels2: 32
       kernel_size1: 3
       kernel_size2: 7

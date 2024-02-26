@@ -100,6 +100,7 @@ class HARmodel(nn.Module):
         self.cnn15=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
         self.cnn16=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
         self.mp3=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
+        self.dropout = nn.Dropout(p=0.2)
         #*******************
 
         self.embedding=nn.Conv1d(in_channels=cnnconf.num_atoms, out_channels=cnnconf.num_cls_features, kernel_size=2,stride=1).double()
@@ -131,6 +132,8 @@ class HARmodel(nn.Module):
         self.atom_layer1=AtomLayer(self.num_indices)
         self.atom_layer2=AtomLayer(self.num_indices)
         self.atom_layer3=AtomLayer(self.num_indices)
+        self.is_dropout=conf.pamap2.model.cnn.dropout
+        self.hide_frac=conf.pamap2.model.atoms.hide_frac
 
         # self.lin_classifier=nn.Linear(256,num_classes).double()
 
@@ -138,18 +141,24 @@ class HARmodel(nn.Module):
         x=self.cnn11(x)
         x=self.cnn12(x)
         x=self.relu(self.bn(x))
+        if self.is_dropout[0]>0:
+            x=self.dropout(x)
         x=self.mp1(x)
         cnn1_out=x
 
         x=self.cnn13(x)
         x=self.cnn14(x)
         x=self.relu(self.bn(x))
+        if self.is_dropout[1]>0:
+            x=self.dropout(x)
         x=self.mp2(x)
         cnn2_out=x
 
         x=self.cnn15(x)
         x=self.cnn16(x)
         x=self.relu(self.bn(x))
+        if self.is_dropout[2]>0:
+            x=self.dropout(x)
         x=self.mp3(x)
 
         _,_,l=x.shape
@@ -164,16 +173,16 @@ class HARmodel(nn.Module):
         atoms=torch.cat((atoms1,atoms2,atoms3),dim=1)
 
         #make random atoms zero 
-        num_elements = 5
-        n_atoms=atoms.shape[1]
-        ind=torch.arange(n_atoms).unsqueeze(0).repeat(bs,1).double()
-        ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,atoms.shape[2]).to(self.device)
-        atoms.scatter_(1,ind_sel,0)
+        if self.hide_frac>0:
+            n_atoms=atoms.shape[1]
+            num_elements=int(n_atoms*self.hide_frac)
+            ind=torch.arange(n_atoms).unsqueeze(0).repeat(bs,1).double()
+            ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,atoms.shape[2]).to(self.device)
+            atoms.scatter_(1,ind_sel,0)
 
         # cnn16_weights = self.cnn16.weight
         # n,_,_=cnn16_weights.shape
         # cnn16_weights=cnn16_weights.view(n,-1)
-
 
         if self.seq_model=='transformer':
             pos_enc=self.pos_encoder(indices3)
