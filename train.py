@@ -187,7 +187,7 @@ def main(conf : DictConfig) -> None:
 # if __name__ == "__main__":
 #     main()
 
-sweep_id = wandb.sweep(sweep=sweep_configuration, project="fun-sweep")
+sweep_id = wandb.sweep(sweep=sweep_configuration, project="atomic_sweep")
 wandb.agent(sweep_id, function=main, count=360)
 
 
