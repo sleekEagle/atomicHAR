@@ -15,8 +15,20 @@ import random
 import utils
 import os
 import FSLtest
+import wandb
 # A logger for this file
 log = logging.getLogger(__name__)
+
+
+sweep_configuration = {
+    "method": "random",
+    "metric": {"goal": "maximize", "name": "fsl_acc"},
+    "parameters": {
+        "pamap2.model.atoms.hide_frac": {"values": [0.1,0.2,0.3]},
+        "pamap2.model.atoms.num_indices": {"values": [1,2,3]},
+        "pamap2.model.cnn.dropout": {"values": [[1,1,1],[1,1,0],[1,0,0],[0,0,0],[0,0,1],[0,1,1],[1,0,1],[0,1,0]]},
+    },
+}
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -59,11 +71,9 @@ def plot_seg(imu,seg_len_list):
     plt.plot(seg)
     wandb.log({"segmentation": plt})
 
-
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf : DictConfig) -> None:
     if conf.data.wandb:
-        import wandb
         wandb.login()
         wandb_conf = OmegaConf.to_container(
             conf, resolve=True, throw_on_missing=True
@@ -85,14 +95,14 @@ def main(conf : DictConfig) -> None:
         device = torch.device("cpu")
     
     dataset=conf.data.dataset
-    if dataset=='utdmhad': 
-        train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
-    elif dataset=='pamap2': 
-        train_dataloader,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
-
+    global train_dataloader,test_dataloader,fsl_dataloader
+    if not ('train_dataloader' in globals()):
+        if dataset=='utdmhad': 
+            train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
+        elif dataset=='pamap2': 
+            train_dataloader,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
     print('dataloaders obtained...')
-    
-    # athar_model=AtomicHAR(conf.pamap2.model,len(conf.utdmhad.train.actions))
+
     num_classes=len(conf.pamap2.train_ac)
     athar_model=FCNN.HARmodel(conf,device)
     athar_model.to(device)
@@ -174,24 +184,10 @@ def main(conf : DictConfig) -> None:
         wandb.log({'fsl_acc':fsl_acc})
     return fsl_acc
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
 
-
-
-# output['imu_segs_interp']
-# output['seg_len_list']
-# b=0
-# imu_=imu[b,:7,:,:]
-# imu_=torch.reshape(imu_,(6,-1))
-# imu_int=torch.nn.functional.interpolate(torch.unsqueeze(imu_,0),(20))[0]
-# imu_segs=output['imu_segs_interp'][:2,:,:]
-# imu_segs=torch.reshape(imu_segs,(6,40))
-# imu_segs_int=torch.nn.functional.interpolate(torch.unsqueeze(imu_segs,0),(20))[0]
-
-
-# plt.plot(imu_int[0,:].numpy())
-# plt.plot(imu_segs_int[0,:].numpy())
-
+sweep_id = wandb.sweep(sweep=sweep_configuration, project="fun-sweep")
+wandb.agent(sweep_id, function=main, count=360)
 
 
