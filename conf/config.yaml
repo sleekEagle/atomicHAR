@@ -7,7 +7,7 @@ data:
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
-  epochs: 1
+  epochs: 30
   seq_model: BLSTM #transformer or BLSTM or cnn
 
 utdmhad:
