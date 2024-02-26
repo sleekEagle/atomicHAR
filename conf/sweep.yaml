@@ -1,9 +1,13 @@
-program: train.py
+program: train.py 
 method: bayes
 metric:
   goal: maximize
   name: fsl_acc
 parameters:
+  pamap2.path:
+    values: [/p/blurdepth/data/pamap2+physical+activity+monitoring/PAMAP2_Dataset/PAMAP2_Dataset/]
+  model.save_path:
+    values: [/p/blurdepth/data/models/atomicHAR/]
   pamap2.model.atoms.hide_frac:
     values: [0.1,0.2,0.3,0.4,0.5]
   pamap2.model.atoms.num_indices:
