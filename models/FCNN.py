@@ -80,6 +80,7 @@ class HARmodel(nn.Module):
     def __init__(self,conf,device):
         super().__init__()
         self.device=device
+        self.conf=conf
         # Extract features, 1D conv layers
         dataset=conf.data.dataset
         cnnconf=conf[dataset].model.cnn
@@ -126,6 +127,12 @@ class HARmodel(nn.Module):
             self.blstm_lin = nn.Linear(blstmconf.hidden_size*2, blstmconf.dense).double()
             self.blstm_bn=nn.BatchNorm1d(blstmconf.dense).double()
             self.blstm_cls = nn.Linear(blstmconf.dense, self.num_classes).double()
+        elif self.seq_model=='seq_CNN':
+            self.cls_cnn1=nn.Conv1d(in_channels=192, out_channels=self.seqconf.channels1,
+                                   kernel_size=self.seqconf.kernel_size,stride=self.seqconf.stride).double()
+            self.cls_mp=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
+            self.cls_cnn2=nn.Conv1d(in_channels=self.seqconf.channels1, out_channels=num_classes,
+                        kernel_size=self.seqconf.kernel_size,stride=self.seqconf.stride).double()
 
         self.num_indices=conf[dataset].model.atoms.num_indices
         self.atom_occuranes=conf[dataset].model.atoms.atm_occur
@@ -167,18 +174,21 @@ class HARmodel(nn.Module):
         bs,n,_=cnn2_out.shape
         x2_resized = F.interpolate(cnn2_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
 
-        atoms1,indices1,valid_atoms1=self.atom_layer1(x1_resized)
-        atoms2,indices2,valid_atoms2=self.atom_layer2(x2_resized)
-        atoms3,indices3,valid_atoms3=self.atom_layer3(x)
-        atoms=torch.cat((atoms1,atoms2,atoms3),dim=1)
+        if self.conf.model.use_atoms:
+            atoms1,indices1,valid_atoms1=self.atom_layer1(x1_resized)
+            atoms2,indices2,valid_atoms2=self.atom_layer2(x2_resized)
+            atoms3,indices3,valid_atoms3=self.atom_layer3(x)
+            feat_conc=torch.cat((atoms1,atoms2,atoms3),dim=1)
+        else:
+            feat_conc=torch.cat((x1_resized,x2_resized,x),dim=1)
 
         #make random atoms zero 
         if self.hide_frac>0:
-            n_atoms=atoms.shape[1]
+            n_atoms=feat_conc.shape[1]
             num_elements=int(n_atoms*self.hide_frac)
             ind=torch.arange(n_atoms).unsqueeze(0).repeat(bs,1).double()
-            ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,atoms.shape[2]).to(self.device)
-            atoms.scatter_(1,ind_sel,0)
+            ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,feat_conc.shape[2]).to(self.device)
+            feat_conc.scatter_(1,ind_sel,0)
 
         # cnn16_weights = self.cnn16.weight
         # n,_,_=cnn16_weights.shape
@@ -195,11 +205,19 @@ class HARmodel(nn.Module):
             pos_enc=pos_enc.swapaxes(0,1)
             pred=F.softmax(self.transformer(pos_enc)[-1,:,:],dim=1)
         elif self.seq_model=='BLSTM':
-            atoms=atoms.swapaxes(1,2)
+            feat_conc=feat_conc.swapaxes(1,2)
             # print('BLSTM model')
-            output, (hn, cn)=self.bilstm(atoms)
+            output, (hn, cn)=self.bilstm(feat_conc)
             last_out=output[:,-1,:]
             lin=self.blstm_lin(last_out)
             lin_bn=self.blstm_bn(lin)
             pred=F.softmax(self.blstm_cls(lin_bn),dim=1)
+        elif self.seq_model=='seq_CNN':
+            x=self.cls_cnn1(feat_conc)
+            x=self.cls_mp(x)
+            x=self.cls_cnn2(x)
+            x=x.mean(dim=2)
+            pred=F.softmax(x,dim=1)
         return pred
+    
+

@@ -34,7 +34,14 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader):
     checkpoint = torch.load(model_path)
     athar_model.load_state_dict(checkpoint)
     athar_model.to(device)
-    handle = athar_model.blstm_bn.register_forward_hook(hook)
+
+    #register hook to acces features
+    if conf.model.seq_model=='BLSTM':
+        handle = athar_model.blstm_bn.register_forward_hook(hook)
+    elif conf.model.seq_model=='transformer':
+        print('this option is not implemented yet')
+    elif conf.model.seq_model=='seq_CNN':
+        handle = athar_model.cls_cnn2.register_forward_hook(hook)
 
     #get test accuracy
     eval_out=utils.eval(conf,athar_model,test_dataloader,device)
@@ -47,7 +54,10 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader):
     #get features
     outputs=athar_model(imu.to(device))
     train_features=feature_output.cpu().detach().numpy()
+    if len(train_features.shape)==3:
+        train_features=np.reshape(train_features,(train_features.shape[0],train_features.shape[1]*train_features.shape[2]))
 
+    
     df=pd.DataFrame()
     df['activity']=activity_remapped.numpy()
     df['ind']=np.arange(len(activity_remapped))

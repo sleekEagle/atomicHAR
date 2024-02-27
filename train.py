@@ -184,10 +184,10 @@ def main(conf : DictConfig) -> None:
         wandb.log({'fsl_acc':fsl_acc})
     return fsl_acc
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
 
-sweep_id = wandb.sweep(sweep=sweep_configuration, project="atomic_sweep")
-wandb.agent(sweep_id, function=main, count=360)
+# sweep_id = wandb.sweep(sweep=sweep_configuration, project="atomic_sweep")
+# wandb.agent(sweep_id, function=main, count=360)
 
 

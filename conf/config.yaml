@@ -2,13 +2,14 @@ gpu_index: 0
 data:
   dataset: pamap2
   num_sensors: 6
-  wandb: True
+  wandb: False
   wandb_name: atomicHAR
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
   epochs: 30
-  seq_model: BLSTM #transformer or BLSTM or cnn
+  seq_model: seq_CNN #transformer or BLSTM or seq_CNN
+  use_atoms: False
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
@@ -63,7 +64,7 @@ pamap2:
       num_indices: 1  #number of max indices to use per sequence
       #the sequence length = num_indices * num_atoms (i.e the number of filters in the last cnn layer)
       atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
-      hide_frac: 0.5 #max fraction of atoms to hide each time
+      hide_frac: 0 #max fraction of atoms to hide each time
     BLSTM:
       hidden_size: 256
       num_layers: 1
@@ -75,10 +76,14 @@ pamap2:
       dropout: 0.2
       dim_feedforward: 64
       d_out: 32
+    seq_CNN:
+      kernel_size: 3
+      stride: 1
+      channels1: 32
     cnn:
       in_channels: 36
       channels1: 64
-      dropout: [1,1,1]
+      dropout: [0,0,0]
       channels2: 32
       kernel_size1: 3
       kernel_size2: 7
