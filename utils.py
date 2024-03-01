@@ -46,3 +46,16 @@ def get_model_path(conf):
         test_s='test_g_'+','.join([item[-1:] for item in conf[dataset].test_subj])
         model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
     return model_path
+
+
+#********************************************************************************
+#********************************************************************************
+#***************losses and metrics**********************************************
+def center_loss(features, labels):
+    label_counts=torch.unique(labels, return_counts=True)[1]
+    feat_stack = torch.stack(torch.split(features, label_counts.tolist()))
+    prototypes = torch.mean(feat_stack, dim=1)
+    center_loss = torch.mean((features - prototypes[labels])**2)
+    return center_loss
+#********************************************************************************
+#********************************************************************************

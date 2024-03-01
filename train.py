@@ -111,7 +111,7 @@ def main(conf : DictConfig) -> None:
     optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.001)
     # optimizer = optim.SGD(athar_model.parameters(), lr=0.001, momentum=0.9)
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=100)
-    model_path=utils.get_model_path(conf)
+    model_path=utils.get_model_path(conf) 
 
     lr=get_lr(optimizer)
     log.info(f'new lr={lr}')
@@ -142,7 +142,7 @@ def main(conf : DictConfig) -> None:
 
             optimizer.zero_grad()
 
-            output=athar_model(imu.to(device))
+            output,_=athar_model(imu.to(device))
 
             cls_loss=cls_loss_fn(output,activity_oh)
             loss=cls_loss

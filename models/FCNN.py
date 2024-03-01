@@ -56,15 +56,22 @@ class PositionalEncoding(nn.Module):
         return self.dropout(emb)
 
 class AtomLayer(nn.Module):
-    def __init__(self,num_indices):
+    def __init__(self,num_indices,one_atm_per_time):
         super(AtomLayer, self).__init__()
         self.num_indices=num_indices
         self.threshold = nn.Parameter(torch.tensor(0.8))
+        self.one_atm_per_time=one_atm_per_time
 
     def forward(self, x):
         threshold=self.threshold
         invalid_atoms=x<threshold
         x[invalid_atoms]=0
+        if self.one_atm_per_time:
+            vmax,imax=torch.max(x,dim=1)
+            imax=imax.unsqueeze(1).repeat(1,x.shape[1],1)
+            z_=torch.zeros_like(x)
+            z_.scatter_(1,imax,1)
+            x=x*z_
         sorted_tensor, indices = torch.sort(x, dim=2,descending=True)
         indices=indices[:,:,:self.num_indices]
 
@@ -90,17 +97,19 @@ class HARmodel(nn.Module):
         self.cnn12=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
 
         self.relu=nn.ReLU()
-        self.bn=nn.BatchNorm1d(64).double()
+        self.bn1=nn.BatchNorm1d(64).double()
         self.mp1=nn.MaxPool1d(kernel_size=3,stride=1,return_indices=False)
         self.dropout = nn.Dropout(p=0.2)
             
         self.cnn13=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
         self.cnn14=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
         self.mp2=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
+        self.bn2=nn.BatchNorm1d(64).double()
 
         self.cnn15=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
         self.cnn16=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
         self.mp3=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
+        self.bn3=nn.BatchNorm1d(64).double()
         self.dropout = nn.Dropout(p=0.2)
         #*******************
 
@@ -134,20 +143,18 @@ class HARmodel(nn.Module):
             self.cls_cnn2=nn.Conv1d(in_channels=self.seqconf.channels1, out_channels=num_classes,
                         kernel_size=self.seqconf.kernel_size,stride=self.seqconf.stride).double()
 
-        self.num_indices=conf[dataset].model.atoms.num_indices
-        self.atom_occuranes=conf[dataset].model.atoms.atm_occur
-        self.atom_layer1=AtomLayer(self.num_indices)
-        self.atom_layer2=AtomLayer(self.num_indices)
-        self.atom_layer3=AtomLayer(self.num_indices)
+        self.num_indices=conf.model.atoms.num_indices
+        self.atom_occuranes=conf.model.atoms.atm_occur
+        self.atom_layer1=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
+        self.atom_layer2=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
+        self.atom_layer3=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
         self.is_dropout=conf.pamap2.model.cnn.dropout
-        self.hide_frac=conf.pamap2.model.atoms.hide_frac
-
-        # self.lin_classifier=nn.Linear(256,num_classes).double()
+        self.hide_frac=conf.model.hide_frac
 
     def forward(self, x):
         x=self.cnn11(x)
         x=self.cnn12(x)
-        x=self.relu(self.bn(x))
+        x=self.relu(self.bn1(x))
         if self.is_dropout[0]>0:
             x=self.dropout(x)
         x=self.mp1(x)
@@ -155,7 +162,7 @@ class HARmodel(nn.Module):
 
         x=self.cnn13(x)
         x=self.cnn14(x)
-        x=self.relu(self.bn(x))
+        x=self.relu(self.bn2(x))
         if self.is_dropout[1]>0:
             x=self.dropout(x)
         x=self.mp2(x)
@@ -163,7 +170,7 @@ class HARmodel(nn.Module):
 
         x=self.cnn15(x)
         x=self.cnn16(x)
-        x=self.relu(self.bn(x))
+        x=self.relu(self.bn3(x))
         if self.is_dropout[2]>0:
             x=self.dropout(x)
         x=self.mp3(x)
@@ -174,7 +181,7 @@ class HARmodel(nn.Module):
         bs,n,_=cnn2_out.shape
         x2_resized = F.interpolate(cnn2_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
 
-        if self.conf.model.use_atoms:
+        if self.conf.model.atoms.use_atoms:
             atoms1,indices1,valid_atoms1=self.atom_layer1(x1_resized)
             atoms2,indices2,valid_atoms2=self.atom_layer2(x2_resized)
             atoms3,indices3,valid_atoms3=self.atom_layer3(x)
@@ -189,10 +196,6 @@ class HARmodel(nn.Module):
             ind=torch.arange(n_atoms).unsqueeze(0).repeat(bs,1).double()
             ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,feat_conc.shape[2]).to(self.device)
             feat_conc.scatter_(1,ind_sel,0)
-
-        # cnn16_weights = self.cnn16.weight
-        # n,_,_=cnn16_weights.shape
-        # cnn16_weights=cnn16_weights.view(n,-1)
 
         if self.seq_model=='transformer':
             pos_enc=self.pos_encoder(indices3)
@@ -211,13 +214,15 @@ class HARmodel(nn.Module):
             last_out=output[:,-1,:]
             lin=self.blstm_lin(last_out)
             lin_bn=self.blstm_bn(lin)
-            pred=F.softmax(self.blstm_cls(lin_bn),dim=1)
+            cls_features=self.blstm_cls(lin_bn)
+            pred=F.softmax(cls_features,dim=1)
         elif self.seq_model=='seq_CNN':
             x=self.cls_cnn1(feat_conc)
             x=self.cls_mp(x)
+            features=x.mean(dim=2)
             x=self.cls_cnn2(x)
             x=x.mean(dim=2)
             pred=F.softmax(x,dim=1)
-        return pred
+        return pred,features
     
 
