@@ -19,8 +19,6 @@ from sklearn.metrics import accuracy_score
 import numpy as np
 import pandas as pd
 
-
-
 #load the model
 def load_model(conf,device):
     model_path=utils.get_model_path(conf)
@@ -101,7 +99,7 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader,test_eval=False):
     if conf.FSL_test.finetune=='BN':
         #freeze all layers except the batch normalization layers
         for name, param in athar_model.named_parameters():
-            if 'blstm_bn' not in name:
+            if 'bn' not in name:
                 param.requires_grad = False
         #get name of all free layers
         print('all free weights:')

@@ -92,34 +92,52 @@ class HARmodel(nn.Module):
         dataset=conf.data.dataset
         cnnconf=conf[dataset].model.cnn
         num_classes=len(conf[dataset].train_ac)
-        #******block 1******
-        self.cnn11=nn.Conv1d(in_channels=cnnconf.in_channels, out_channels=64, kernel_size=3,stride=1).double()
-        self.cnn12=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
 
-        self.relu=nn.ReLU()
-        self.bn1=nn.BatchNorm1d(64).double()
-        self.mp1=nn.MaxPool1d(kernel_size=3,stride=1,return_indices=False)
-        self.dropout = nn.Dropout(p=0.2)
-            
-        self.cnn13=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
-        self.cnn14=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
-        self.mp2=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
-        self.bn2=nn.BatchNorm1d(64).double()
+        #create cnn feature extractors
+        self.feature_ext_list = nn.ModuleList()
+        last_channels=conf.model.feature_ext.in_channels
+        conc_channels=0
+        for i in range(len(conf.model.feature_ext.layers)):
+            module= nn.ModuleDict()
+            c_=conf.model.feature_ext.layers[i]
+            for j in range(len(c_)):
+                c=c_[j]
+                cnn_layer=nn.Conv1d(in_channels=last_channels,
+                                    out_channels=c[0],
+                                    kernel_size=c[1],stride=c[2]).double()
+                
+                last_channels=c[0]
+                module[f'cnn_{i}_{j}']=cnn_layer
+            conc_channels+=last_channels
+            bn=conf.model.feature_ext.bn[i]
+            if bn:
+                module[f'bn_{i}']=nn.BatchNorm1d(last_channels).double()
+            module[f'relu_{i}'] = nn.ReLU()
+            d=conf.model.feature_ext.dropout[i]
+            if d:
+                module[f'drop_{i}'] = nn.Dropout(p=d)
+            mp=conf.model.feature_ext.mp[i]
+            module[f'mp_{i}'] = nn.MaxPool1d(kernel_size=mp[0],stride=mp[1],return_indices=False)
 
-        self.cnn15=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3,stride=1).double()
-        self.cnn16=nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2,stride=1).double()
-        self.mp3=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
-        self.bn3=nn.BatchNorm1d(64).double()
-        self.dropout = nn.Dropout(p=0.2)
+            self.feature_ext_list.append(module)
         #*******************
+        self.seq_model=conf.model.seq_model.type
+        if self.seq_model=='cnn':
+            emb_conf=conf.model.seq_model.cnn.emb
+            if conf.model.residual:
+                ch_in=conc_channels
+            else:
+                ch_in=last_channels
+            self.emb_cnn=nn.Conv1d(in_channels=ch_in, out_channels=emb_conf[0],
+                               kernel_size=emb_conf[1],
+                               stride=emb_conf[2]).double()
+            cls_conf=conf.model.seq_model.cnn.cls
+            emb_n_channles=emb_conf[0]
+            self.cls_cnn=nn.Conv1d(in_channels=emb_n_channles, out_channels=num_classes,
+                               kernel_size=cls_conf[1],
+                               stride=cls_conf[2]).double()
 
-        self.embedding=nn.Conv1d(in_channels=cnnconf.num_atoms, out_channels=cnnconf.num_cls_features, kernel_size=2,stride=1).double()
-        self.classifier=nn.Conv1d(in_channels=cnnconf.num_cls_features, out_channels=num_classes, kernel_size=3,stride=1).double()  
-        self.num_classes=num_classes  
-
-        self.seq_model=conf.model.seq_model
-        self.seqconf=conf[dataset].model[self.seq_model]
-        if self.seq_model=='transformer':
+        elif self.seq_model=='transformer':
             print('transformer model')
             self.pos_encoder=PositionalEncoding(int(self.seqconf.d_model*0.5)).double()
             self.transformer=TransformerModel(self.seqconf.d_model,self.seqconf.n_head,
@@ -136,70 +154,46 @@ class HARmodel(nn.Module):
             self.blstm_lin = nn.Linear(blstmconf.hidden_size*2, blstmconf.dense).double()
             self.blstm_bn=nn.BatchNorm1d(blstmconf.dense).double()
             self.blstm_cls = nn.Linear(blstmconf.dense, self.num_classes).double()
-        elif self.seq_model=='seq_CNN':
-            self.cls_cnn1=nn.Conv1d(in_channels=192, out_channels=self.seqconf.channels1,
-                                   kernel_size=self.seqconf.kernel_size,stride=self.seqconf.stride).double()
-            self.cls_mp=nn.MaxPool1d(kernel_size=3,stride=2,return_indices=False)
-            self.cls_cnn2=nn.Conv1d(in_channels=self.seqconf.channels1, out_channels=num_classes,
-                        kernel_size=self.seqconf.kernel_size,stride=self.seqconf.stride).double()
-
-        self.num_indices=conf.model.atoms.num_indices
-        self.atom_occuranes=conf.model.atoms.atm_occur
-        self.atom_layer1=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
-        self.atom_layer2=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
-        self.atom_layer3=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
-        self.is_dropout=conf.pamap2.model.cnn.dropout
+        if conf.model.atoms.use_atoms:
+            self.atom_layer_list=nn.ModuleList()
+            self.num_indices=conf.model.atoms.num_indices
+            self.atom_occuranes=conf.model.atoms.atm_occur
+            self.atom_layer=AtomLayer(self.num_indices,conf.model.atoms.one_atm_per_time)
         self.hide_frac=conf.model.hide_frac
 
     def forward(self, x):
-        x=self.cnn11(x)
-        x=self.cnn12(x)
-        x=self.relu(self.bn1(x))
-        if self.is_dropout[0]>0:
-            x=self.dropout(x)
-        x=self.mp1(x)
-        cnn1_out=x
+        #extract features
+        features_list=[]
+        for mod in self.feature_ext_list:
+            for layer in mod:
+                x=mod[layer](x)
+            features_list.append(x)
 
-        x=self.cnn13(x)
-        x=self.cnn14(x)
-        x=self.relu(self.bn2(x))
-        if self.is_dropout[1]>0:
-            x=self.dropout(x)
-        x=self.mp2(x)
-        cnn2_out=x
-
-        x=self.cnn15(x)
-        x=self.cnn16(x)
-        x=self.relu(self.bn3(x))
-        if self.is_dropout[2]>0:
-            x=self.dropout(x)
-        x=self.mp3(x)
-
-        _,_,l=x.shape
-        bs,n,_=cnn1_out.shape
-        x1_resized = F.interpolate(cnn1_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
-        bs,n,_=cnn2_out.shape
-        x2_resized = F.interpolate(cnn2_out.unsqueeze(0).unsqueeze(0), size=(bs, n, l), mode='trilinear', align_corners=False).squeeze()
-
-        if self.conf.model.atoms.use_atoms:
-            atoms1,indices1,valid_atoms1=self.atom_layer1(x1_resized)
-            atoms2,indices2,valid_atoms2=self.atom_layer2(x2_resized)
-            atoms3,indices3,valid_atoms3=self.atom_layer3(x)
-            feat_conc=torch.cat((atoms1,atoms2,atoms3),dim=1)
+        if self.conf.model.residual:
+            features_int=[]
+            _,_,l=features_list[-1].shape
+            for i in range(len(features_list)-1):
+                bs,n,_=features_list[i].shape
+                features_int.append(F.interpolate(features_list[i].unsqueeze(0).unsqueeze(0),size=(bs, n, l),mode='trilinear', align_corners=False).squeeze())
+            features_int.append(features_list[-1])
+            features=torch.cat(features_int,dim=1)
         else:
-            feat_conc=torch.cat((x1_resized,x2_resized,x),dim=1)
+            features=x
+        
+        if self.conf.model.atoms.use_atoms:
+            features,_,_=self.atom_layer(features)
 
         #make random atoms zero 
         if self.hide_frac>0:
-            n_atoms=feat_conc.shape[1]
+            bs,n_atoms,_=features.shape
             num_elements=int(n_atoms*self.hide_frac)
             ind=torch.arange(n_atoms).unsqueeze(0).repeat(bs,1).double()
-            ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,feat_conc.shape[2]).to(self.device)
-            feat_conc.scatter_(1,ind_sel,0)
+            ind_sel=torch.multinomial(ind, num_samples=num_elements).unsqueeze(2).repeat(1,1,features.shape[2]).to(self.device)
+            features.scatter_(1,ind_sel,0)
 
         if self.seq_model=='transformer':
-            pos_enc=self.pos_encoder(indices3)
-            valid_atoms=torch.gather(valid_atoms,2,indices3)
+            pos_enc=self.pos_encoder(features)
+            valid_atoms=torch.gather(valid_atoms,2,features)
             valid_atoms=valid_atoms.unsqueeze(-1).repeat(1, 1, 1, pos_enc.shape[-1])
             pos_enc=pos_enc.view(pos_enc.shape[0],-1,pos_enc.shape[-1])
             valid_atoms=valid_atoms.view(valid_atoms.shape[0],-1,valid_atoms.shape[-1])
@@ -216,13 +210,10 @@ class HARmodel(nn.Module):
             lin_bn=self.blstm_bn(lin)
             cls_features=self.blstm_cls(lin_bn)
             pred=F.softmax(cls_features,dim=1)
-        elif self.seq_model=='seq_CNN':
-            x=self.cls_cnn1(feat_conc)
-            x=self.cls_mp(x)
-            features=x.mean(dim=2)
-            x=self.cls_cnn2(x)
-            x=x.mean(dim=2)
-            pred=F.softmax(x,dim=1)
-        return pred,features
+        elif self.seq_model=='cnn':
+            emb_=self.emb_cnn(features)
+            emb=emb_.mean(dim=2)
+            pred=F.softmax(self.cls_cnn(emb_).mean(dim=2),dim=1)
+        return pred,emb
     
 

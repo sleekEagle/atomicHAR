@@ -8,19 +8,30 @@ data:
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
   epochs: 10
-  seq_model: seq_CNN #transformer or BLSTM or seq_CNN
   atoms:
     use_atoms: False
     one_atm_per_time: False #only one atom per time step
     num_indices: 2  #number of max indices to use per sequence
     #the sequence length = num_indices * num_atoms (i.e the number of filters in the last cnn layer)
     atm_occur: 4 # how many instances of the same atom are allowed to occur in the same sequence
-  hide_frac: 0.0 #max fraction of atoms to hide each time
+  hide_frac: 0 #max fraction of atoms to hide each time
+  residual: False
+  feature_ext:
+    in_channels: 36
+    layers: [[[64,2,1],[64,2,1]],[[64,2,1],[64,2,1]],[[64,2,1],[64,2,1]]]
+    dropout: [0.5,0.5,0.5]
+    bn: [1,1,1]
+    mp: [[2,1],[2,1],[2,1]]
+  seq_model:
+    type: "cnn"
+    cnn: 
+      emb: [64,1,1]
+      cls: [-1,1,1]
 
 FSL_test:
   type: regular #regular: normal FSL testing fdist: plot feature dist
   layer: blstm_bn
-  finetune: BN
+  finetune: other
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\

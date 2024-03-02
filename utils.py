@@ -33,7 +33,7 @@ def eval(conf,model,dataloader,device):
         if conf.data.dataset=='pamap2':
             imu,_,activity=input
             activity_oh=get_onehot(activity,num_classes).to(device)        
-        output=model(imu.to(device))
+        output,_=model(imu.to(device))
         acc=get_acc(output,activity_oh)
         mean_acc+=acc
     return mean_acc/len(dataloader)
