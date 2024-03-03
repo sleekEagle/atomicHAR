@@ -51,11 +51,14 @@ def get_model_path(conf):
 #********************************************************************************
 #********************************************************************************
 #***************losses and metrics**********************************************
-def center_loss(features, labels):
-    label_counts=torch.unique(labels, return_counts=True)[1]
-    feat_stack = torch.stack(torch.split(features, label_counts.tolist()))
-    prototypes = torch.mean(feat_stack, dim=1)
+def center_loss(features, labels,device):
+    _,n=features.shape
+    sums=(torch.zeros(labels.max().item() + 1,n).to(device).double()).index_add_(0, labels, features,alpha=1)
+    nums=(torch.zeros(labels.max().item() + 1).to(device).double()).index_add_(0, labels, torch.ones_like(labels).double(),alpha=1)
+    nums=nums.unsqueeze(-1).repeat(1,n)
+    prototypes=sums/nums
     center_loss = torch.mean((features - prototypes[labels])**2)
     return center_loss
 #********************************************************************************
 #********************************************************************************
+

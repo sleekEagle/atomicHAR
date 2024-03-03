@@ -119,9 +119,7 @@ def main(conf : DictConfig) -> None:
     min_loss=100
     plot_freq=100000
     for epoch in range(conf.model.epochs):
-        mean_loss,mean_imu_loss,mean_forcast_loss,mean_atom_loss,mean_cls_loss=0,0,0,0,0
-        mean_acc=0
-
+        mean_loss,mean_cls_loss,mean_cl,mean_acc=0,0,0,0
         if (epoch+1)%10==0:
             scheduler.step()
             lr=get_lr(optimizer)
@@ -142,23 +140,24 @@ def main(conf : DictConfig) -> None:
 
             optimizer.zero_grad()
 
-            output,_=athar_model(imu.to(device))
-
+            output,features=athar_model(imu.to(device))
             cls_loss=cls_loss_fn(output,activity_oh)
-            loss=cls_loss
+            cl=0
+            if conf.train.use_CL:
+                cl=utils.center_loss(features,activity.to(device),device)
+            loss=cls_loss+conf.train.lmd*cl
             acc=utils.get_acc(activity_oh,output)
 
             loss.backward()
             optimizer.step()
             mean_loss+=loss.item()
-            mean_imu_loss+=cls_loss.item()
+            mean_cls_loss+=cls_loss.item()
+            mean_cl+=cl.item()
             mean_acc+=acc
 
         mean_loss=mean_loss/len(train_dataloader)
-        mean_imu_loss=mean_imu_loss/len(train_dataloader)
-        mean_forcast_loss=mean_forcast_loss/len(train_dataloader)
-        mean_atom_loss=mean_atom_loss/len(train_dataloader)
         mean_cls_loss=mean_cls_loss/len(train_dataloader)
+        mean_cl=mean_cl/len(train_dataloader)
         mean_acc=mean_acc/len(train_dataloader)
 
         if mean_loss<min_loss:
@@ -166,12 +165,7 @@ def main(conf : DictConfig) -> None:
             min_loss=mean_loss
             torch.save(athar_model.state_dict(),model_path)
 
-        log.info(f'Epoch={epoch}, loss = {mean_imu_loss:.5f},accuracy={acc:.2f}')
-        mean_loss=0
-        mean_imu_loss=0
-        mean_forcast_loss=0
-        mean_atom_loss=0
-        mean_acc=0
+        log.info(f'Epoch={epoch}, cls loss = {mean_cls_loss:.5f},center loss = {mean_cl:.5f}, accuracy={mean_acc:.2f}')
 
         #***************eval*******************
         if epoch%10==0:

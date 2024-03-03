@@ -109,10 +109,10 @@ class HARmodel(nn.Module):
                 last_channels=c[0]
                 module[f'cnn_{i}_{j}']=cnn_layer
             conc_channels+=last_channels
+            module[f'relu_{i}'] = nn.ReLU()
             bn=conf.model.feature_ext.bn[i]
             if bn:
                 module[f'bn_{i}']=nn.BatchNorm1d(last_channels).double()
-            module[f'relu_{i}'] = nn.ReLU()
             d=conf.model.feature_ext.dropout[i]
             if d:
                 module[f'drop_{i}'] = nn.Dropout(p=d)
