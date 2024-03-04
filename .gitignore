@@ -3,3 +3,5 @@ multirun/
 outputs/
 wandb/
 launch.json
+*.png
+*.jpg
