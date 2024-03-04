@@ -172,7 +172,7 @@ def main(conf : DictConfig) -> None:
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
             log.info(f"test accuracy: {eval_out:.2f}")
 
-    fsl_acc=FSLtest.get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
+    fsl_acc=FSLtest.run_FSL(conf)
     log.info(f'FSL accuracy is {fsl_acc:.2f}')
     if conf.data.wandb:
         wandb.log({'fsl_acc':fsl_acc})

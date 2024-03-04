@@ -203,11 +203,10 @@ def plot_features(train_features,test_features,savepath):
         # axs[row, col].set_title(f'Feature {i+1}')
     plt.tight_layout()
     plt.savefig(savepath, dpi=500)
-    
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
-def main(conf : DictConfig) -> None:
-    # Check if the specified GPU is available
+
+def run_FSL(conf):
+     # Check if the specified GPU is available
     if torch.cuda.is_available():
         n_gpus=torch.cuda.device_count()
         assert conf.gpu_index<n_gpus, f"The specified GPU index is not available. Available n GPUs: {n_gpus}"
@@ -248,15 +247,19 @@ def main(conf : DictConfig) -> None:
             data=torch.cat((pamap2_imu,ems_imu_),dim=0)
             activity=torch.cat((pamap2_activity_remapped,ems_activity),dim=0)
 
-        get_FSL_acc(conf,device,data,activity)
+        acc=get_FSL_acc(conf,device,data,activity)
 
     elif conf.FSL_test.type=='fdist':
         layer=conf.FSL_test.layer
         train_features=collect_features(train_dataloader,athar_model,layer,device)
         test_features=collect_features(fsl_dataloader,athar_model,layer,device)
         plot_features(train_features,test_features,os.path.join(layer+'.png'))
+    return acc
 
-
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(conf : DictConfig) -> None:
+    run_FSL(conf)
+   
 if __name__ == "__main__":
     main()
 
