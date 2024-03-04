@@ -14,18 +14,22 @@ adapted from
 https://www.kaggle.com/code/avrahamcalev/time-series-models-pamap2-dataset
 '''
 
-required_columns=['time_stamp','activity_id',
-              'hand_3D_acceleration_16_x','hand_3D_acceleration_16_y','hand_3D_acceleration_16_z',
-              'hand_3D_gyroscope_x','hand_3D_gyroscope_y','hand_3D_gyroscope_z',
-              'hand_4D_orientation_x','hand_4D_orientation_y','hand_4D_orientation_z','hand_4D_orientation_w',
-              'chest_3D_acceleration_16_x','chest_3D_acceleration_16_y','chest_3D_acceleration_16_z',
-              'chest_3D_gyroscope_x','chest_3D_gyroscope_y','chest_3D_gyroscope_z',
-              'chest_3D_magnetometer_x','chest_3D_magnetometer_y','chest_3D_magnetometer_z',
-              'chest_4D_orientation_x','chest_4D_orientation_y','chest_4D_orientation_z','chest_4D_orientation_w',
-              'ankle_3D_acceleration_16_x','ankle_3D_acceleration_16_y','ankle_3D_acceleration_16_z',
-              'ankle_3D_gyroscope_x','ankle_3D_gyroscope_y','ankle_3D_gyroscope_z',
-              'ankle_3D_magnetometer_x','ankle_3D_magnetometer_y','ankle_3D_magnetometer_z',
-              'ankle_4D_orientation_x','ankle_4D_orientation_y','ankle_4D_orientation_z','ankle_4D_orientation_w']
+# required_columns=['time_stamp','activity_id',
+#               'hand_3D_acceleration_16_x','hand_3D_acceleration_16_y','hand_3D_acceleration_16_z',
+#               'hand_3D_gyroscope_x','hand_3D_gyroscope_y','hand_3D_gyroscope_z',
+#               'hand_4D_orientation_x','hand_4D_orientation_y','hand_4D_orientation_z','hand_4D_orientation_w',
+#               'chest_3D_acceleration_16_x','chest_3D_acceleration_16_y','chest_3D_acceleration_16_z',
+#               'chest_3D_gyroscope_x','chest_3D_gyroscope_y','chest_3D_gyroscope_z',
+#               'chest_3D_magnetometer_x','chest_3D_magnetometer_y','chest_3D_magnetometer_z',
+#               'chest_4D_orientation_x','chest_4D_orientation_y','chest_4D_orientation_z','chest_4D_orientation_w',
+#               'ankle_3D_acceleration_16_x','ankle_3D_acceleration_16_y','ankle_3D_acceleration_16_z',
+#               'ankle_3D_gyroscope_x','ankle_3D_gyroscope_y','ankle_3D_gyroscope_z',
+#               'ankle_3D_magnetometer_x','ankle_3D_magnetometer_y','ankle_3D_magnetometer_z',
+#               'ankle_4D_orientation_x','ankle_4D_orientation_y','ankle_4D_orientation_z','ankle_4D_orientation_w']
+
+# required_columns=['time_stamp','activity_id',
+#               'hand_3D_acceleration_16_x','hand_3D_acceleration_16_y','hand_3D_acceleration_16_z',
+#               'hand_3D_gyroscope_x','hand_3D_gyroscope_y','hand_3D_gyroscope_z']
 
 
 def load_activity_map():
@@ -103,7 +107,7 @@ def load_IMU():
     output.extend(ankle)
     return output
 
-def load_subjects(path,dir):
+def load_subjects(path,dir,required_columns):
     files=utils.get_files(os.path.join(path,dir))
     output = pd.DataFrame()
     cols = load_IMU()
@@ -143,18 +147,19 @@ class PAMAP2(Dataset):
                  actions=[1,2,3],
                  subjects=[1,2],
                  window_len=1,
-                 inv_overlap=0.5,normalize=True):
+                 inv_overlap=0.5,
+                 required_columns=[],normalize=True):
         self.actions=actions
         self.subjects=subjects
         self.window_len=window_len
         self.inv_overlap=inv_overlap
         self.normalize=normalize
+        self.required_columns=required_columns
 
         self.data_split=get_data_split(data,subjects,actions)
         self.data_split = self.data_split.reset_index(drop=True)
 
         #rename activities to vary from 0 to n
-        self.new_actions=np.arange(len(actions))
         sub_ac_start_idx=[]
         actions=np.array(actions)
         for sub in subjects:
@@ -202,14 +207,14 @@ class PAMAP2(Dataset):
         subject=self.sub_ac_start_idx[idx][0]
         activity_original=self.sub_ac_start_idx[idx][1]
         start_idx=self.sub_ac_start_idx[idx][2]
-        activity_remapped=self.new_actions[np.where(self.actions==activity_original)[0][0]]
+        activity_remapped=np.where(self.actions==activity_original)[0][0]
         # condition=(self.data_split['id']==subject) & (self.data_split['activity']==activity)
         data_sample=self.data_split.iloc[start_idx:start_idx+self.window_len]
         if data_sample.shape[0]==0:
             print('here')
 
         data_vec_list=[]
-        for colname in required_columns:
+        for colname in self.required_columns:
             if colname=='time_stamp' or colname=='activity_id':
                 continue
             data_vec=data_sample[colname].values
@@ -235,19 +240,23 @@ class PAMAP2(Dataset):
 
         #normmalize data
         if self.normalize:
-            _,l=data_sample.shape
-            max_vals=np.repeat(np.expand_dims(np.array(self.max_vals),axis=1),repeats=l,axis=1)
-            min_vals=np.repeat(np.expand_dims(np.array(self.min_vals),axis=1),repeats=l,axis=1)
+            n_ch,l=data_sample.shape
+            max_vals=self.max_vals[:n_ch]
+            min_vals=self.min_vals[:n_ch]
+            max_vals=np.repeat(np.expand_dims(np.array(max_vals),axis=1),repeats=l,axis=1)
+            min_vals=np.repeat(np.expand_dims(np.array(min_vals),axis=1),repeats=l,axis=1)
             data_sample=(data_sample-min_vals)/(max_vals-min_vals)
         return data_sample,activity_original,activity_remapped
 
 def get_dataloader(conf):
     df_list=[]
+    required_columns=conf.pamap2.required_columns
+    print('number of required columns:',len(required_columns))
     if 'Optional' in conf.pamap2.data_types:
-        optional_data = load_subjects(conf.pamap2.path,'Optional')
+        optional_data = load_subjects(conf.pamap2.path,'Optional',required_columns)
         df_list.append(optional_data)
     if 'Protocol' in conf.pamap2.data_types:
-        protocol_data = load_subjects(conf.pamap2.path,'Protocol')
+        protocol_data = load_subjects(conf.pamap2.path,'Protocol',required_columns)
         df_list.append(protocol_data)
     data = pd.concat(df_list, ignore_index=True) 
     # data['activity']=pd.factorize(data['activity_id'])[0]
@@ -271,15 +280,18 @@ def get_dataloader(conf):
     non_overlapping_train_data=PAMAP2(data,
                     actions=train_actions,
                     subjects=non_overlapping_train_subjects, 
-                    window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
+                    window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize,
+                    required_columns=required_columns)
     overlapping_data=PAMAP2(data,
                     actions=train_actions,
                     subjects=overlapping_subjects, 
-                    window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
+                    window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize,
+                    required_columns=required_columns)
     non_overlapping_test_data=PAMAP2(data,
             actions=train_actions,
             subjects=non_overlapping_test_subjects, 
-            window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize)
+            window_len=window, inv_overlap=overlap,normalize=conf.pamap2.normalize,
+            required_columns=required_columns)
 
     #divide overlapping data 
     train_len=int(len(overlapping_data)*split)
@@ -298,7 +310,8 @@ def get_dataloader(conf):
     fsl_data=PAMAP2(data,
                     actions=fsl_actions,
                     subjects=fsl_subjects,
-                    window_len=window,inv_overlap=fsl_overlap,normalize=conf.pamap2.normalize)
+                    window_len=window,inv_overlap=fsl_overlap,normalize=conf.pamap2.normalize,
+                    required_columns=required_columns)
     fsl_dataloader = DataLoader(fsl_data, batch_size=len(fsl_data), shuffle=True)
     
     return train_dataloader,test_dataloader,fsl_dataloader

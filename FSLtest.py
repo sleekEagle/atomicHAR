@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from dataloaders import UTD_MHAD,PAMAP2
+from dataloaders import UTD_MHAD,PAMAP2,EMS
 import matplotlib.pyplot as plt
 from models import FCNN
 import torch
@@ -90,10 +90,15 @@ def knn(model,train_inputs,train_l,test_inputs,test_l,device,n=5):
     test_f=test_f.cpu().detach().numpy()
     test_l=test_l.numpy()
     pred=knn.predict(test_f)
-    acc=np.sum(pred==test_l)/len(test_l)
-    return acc
+    correct=pred==test_l
+    unique_l=np.unique(test_l)
+    unique_l = np.sort(unique_l)
+    correct_vals=[correct[test_l==l] for l in unique_l]
+    class_acc=[np.sum(c)/len(c) for c in correct_vals]
+    acc=np.sum(correct)/len(test_l)
+    return acc,class_acc
 
-def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader,test_eval=False):
+def get_FSL_acc(conf,device,data,activity):
      #load weights
     athar_model=load_model(conf,device)
     if conf.FSL_test.finetune=='BN':
@@ -121,27 +126,14 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader,test_eval=False):
     elif conf.model.seq_model=='seq_CNN':
         handle = athar_model.cls_mp.register_forward_hook(hook)
 
-    #get test accuracy
-    if test_eval:
-        eval_out=utils.eval(conf,athar_model,test_dataloader,device)
-        print(f'test accuracy={eval_out:.2f}%')
-
      #*****************train the FSL classifier***************
-    #get fsl train data
-    for batch in fsl_dataloader:
-        imu,activity_original,activity_remapped = batch
-    #get features
-    # outputs=athar_model(imu.to(device))
-    # train_features=feature_output.cpu().detach().numpy()
-    # if len(train_features.shape)==3:
-    #     train_features=np.reshape(train_features,(train_features.shape[0],train_features.shape[1]*train_features.shape[2]))
 
-    
     df=pd.DataFrame()
-    df['activity']=activity_remapped.numpy()
-    df['ind']=np.arange(len(activity_remapped))
+    df['activity']=activity.numpy()
+    df['ind']=np.arange(len(activity))
 
     acc,n=0,0
+    cls_acc=[]
 
     while True:
         if np.min(df.groupby('activity').size().values)<5:
@@ -153,13 +145,13 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader,test_eval=False):
         
         train_df = df.groupby('activity').sample(n=5,random_state=1)
         train_indices=torch.tensor(train_df['ind'].values)
-        train_inputs=imu[train_indices]
-        train_labels=activity_remapped[train_indices]   
+        train_inputs=data[train_indices]
+        train_labels=activity[train_indices]   
 
         df=df.drop(train_df['ind'])
         test_indices=torch.tensor(df['ind'].values)
-        test_input=imu[test_indices]
-        test_labels=activity_remapped[test_indices]  
+        test_input=data[test_indices]
+        test_labels=activity[test_indices]  
         
         #define bn layers and respective feature layers
         layers=[['cnn12','bn1'],['cnn14','bn2'],['cnn16','bn3'],['blstm_lin','blstm_bn']]
@@ -170,7 +162,7 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader,test_eval=False):
             for i in range(100):
                 optimizer.zero_grad()
                 pred,features=athar_model(train_inputs.to(device))
-                center_loss=utils.center_loss(features,train_labels)
+                center_loss=utils.center_loss(features,train_labels,device)
                 if i==0:
                     original_cl=center_loss.item()
                 center_loss.backward()
@@ -180,10 +172,14 @@ def get_FSL_acc(conf,device,test_dataloader,fsl_dataloader,test_eval=False):
                 print('using original model')
                 athar_model=load_model(conf,device)
 
-        acc_=knn(athar_model,train_inputs,train_labels,test_input,test_labels,device,n=5)
+        acc_,class_acc_=knn(athar_model,train_inputs,train_labels,test_input,test_labels,device,n=5)
         print(f'running acc={acc_:.2f}')
         acc+=acc_
+        cls_acc.append(class_acc_)
     print(f'FSL accuracy is {acc/n:.2f}  #runs={n}')
+    cls_acc_mean=np.mean(np.array(cls_acc),axis=0)
+    cls_acc_mean = [round(val, 2) for val in list(cls_acc_mean)]
+    print(f'class accuracy={cls_acc_mean}')
     return acc/n
 
 #plot the feature distributions of a given layer from two dataloaders
@@ -221,16 +217,38 @@ def main(conf : DictConfig) -> None:
         device = torch.device("cpu")
 
     #load data
-    dataset=conf.data.dataset
-    if dataset=='utdmhad': 
+    dataset=conf.FSL_test.dataset
+    if 'utdmhad' in dataset: 
         train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
-    elif dataset=='pamap2': 
+    if 'pamap2' in dataset: 
         train_dataloader,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
+    if 'ems' in dataset:
+        ems_data_loader=EMS.get_dataloader(conf)   
 
     athar_model=load_model(conf,device)
 
     if conf.FSL_test.type=='regular':
-        get_FSL_acc(conf,device,test_dataloader,fsl_dataloader)
+            #get test accuracy
+        if conf.FSL_test.test_eval:
+            eval_out=utils.eval(conf,athar_model,test_dataloader,device)
+            print(f'test accuracy={eval_out:.2f}%')
+        #collect features from dataloaders
+        if 'pamap2' in conf.FSL_test.dataset:
+            for batch in fsl_dataloader:
+                pamap2_imu,activity_original,pamap2_activity_remapped = batch
+                data=pamap2_imu
+                activity=pamap2_activity_remapped
+        if 'ems' in conf.FSL_test.dataset:
+            for batch in ems_data_loader:
+                ems_imu = batch
+            #concatenate data from ems and pamap2
+            ems_activity=torch.max(torch.unique(pamap2_activity_remapped)).item()+1
+            ems_activity=(torch.ones(ems_imu.shape[0])*ems_activity).to(torch.int32)
+            ems_imu_=ems_imu.swapaxes(1,2)
+            data=torch.cat((pamap2_imu,ems_imu_),dim=0)
+            activity=torch.cat((pamap2_activity_remapped,ems_activity),dim=0)
+
+        get_FSL_acc(conf,device,data,activity)
 
     elif conf.FSL_test.type=='fdist':
         layer=conf.FSL_test.layer

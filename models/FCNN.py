@@ -95,7 +95,8 @@ class HARmodel(nn.Module):
 
         #create cnn feature extractors
         self.feature_ext_list = nn.ModuleList()
-        last_channels=conf.model.feature_ext.in_channels
+        cols= [col for col in conf[dataset].required_columns if (('hand' in col) or ('chest' in col) or ('ankle' in col))]
+        last_channels=len(cols)
         conc_channels=0
         for i in range(len(conf.model.feature_ext.layers)):
             module= nn.ModuleDict()

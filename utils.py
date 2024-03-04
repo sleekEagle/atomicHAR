@@ -41,10 +41,15 @@ def eval(conf,model,dataloader,device):
 def get_model_path(conf):
     model_path=conf.model.save_path
     dataset=conf.data.dataset
+    lmd=conf.train.lmd
     if dataset=='pamap2':
-        train_s='train_g_'+','.join([item[-1:] for item in conf[dataset].train_subj])
-        test_s='test_g_'+','.join([item[-1:] for item in conf[dataset].test_subj])
-        model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}.pth')
+        required_columns=conf.pamap2.required_columns
+        dataset=conf.data.dataset
+        cols= [col for col in conf[dataset].required_columns if (('hand' in col) or ('chest' in col) or ('ankle' in col))]
+        train_s='trainG_'+','.join([item[-1:] for item in conf[dataset].train_subj])
+        test_s='testG_'+','.join([item[-1:] for item in conf[dataset].test_subj])
+        model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}_nfeat_{len(cols)}_lmd{lmd}.pth')
+    print('save model path:',model_path)
     return model_path
 
 
@@ -53,8 +58,8 @@ def get_model_path(conf):
 #***************losses and metrics**********************************************
 def center_loss(features, labels,device):
     _,n=features.shape
-    sums=(torch.zeros(labels.max().item() + 1,n).to(device).double()).index_add_(0, labels, features,alpha=1)
-    nums=(torch.zeros(labels.max().item() + 1).to(device).double()).index_add_(0, labels, torch.ones_like(labels).double(),alpha=1)
+    sums=(torch.zeros(labels.max().item() + 1,n).to(device).double()).index_add_(0, labels.to(device), features,alpha=1)
+    nums=(torch.zeros(labels.max().item() + 1).to(device).double()).index_add_(0, labels.to(device), torch.ones_like(labels).to(device).double(),alpha=1)
     nums=nums.unsqueeze(-1).repeat(1,n)
     prototypes=sums/nums
     center_loss = torch.mean((features - prototypes[labels])**2)

@@ -11,7 +11,7 @@ train:
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
-  epochs: 10
+  epochs: 21
   atoms:
     use_atoms: False
     one_atm_per_time: False #only one atom per time step
@@ -21,7 +21,6 @@ model:
   hide_frac: 0 #max fraction of atoms to hide each time
   residual: False
   feature_ext:
-    in_channels: 36
     layers: [[[64,2,1],[64,2,1]],[[64,2,1],[64,2,1]]]
     dropout: [0,0,0]
     bn: [1,1,1]
@@ -35,7 +34,9 @@ model:
 FSL_test:
   type: regular #regular: normal FSL testing fdist: plot feature dist
   layer: blstm_bn
-  finetune: other
+  finetune: others
+  dataset: [pamap2]
+  test_eval: False
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
@@ -72,10 +73,22 @@ pamap2:
   group2: [104,105,106]
   group3: [107,108,109]
   train_ac: [1,3,4,5,12,16,24]
-  train_subj: [group1,group2,group3]
+  train_subj: [group2]
   test_subj: [group2]
+  required_columns: ['time_stamp','activity_id',
+              'hand_3D_acceleration_16_x','hand_3D_acceleration_16_y','hand_3D_acceleration_16_z',
+              'hand_3D_gyroscope_x','hand_3D_gyroscope_y','hand_3D_gyroscope_z',
+              'hand_4D_orientation_x','hand_4D_orientation_y','hand_4D_orientation_z','hand_4D_orientation_w',
+              'chest_3D_acceleration_16_x','chest_3D_acceleration_16_y','chest_3D_acceleration_16_z',
+              'chest_3D_gyroscope_x','chest_3D_gyroscope_y','chest_3D_gyroscope_z',
+              'chest_3D_magnetometer_x','chest_3D_magnetometer_y','chest_3D_magnetometer_z',
+              'chest_4D_orientation_x','chest_4D_orientation_y','chest_4D_orientation_z','chest_4D_orientation_w',
+              'ankle_3D_acceleration_16_x','ankle_3D_acceleration_16_y','ankle_3D_acceleration_16_z',
+              'ankle_3D_gyroscope_x','ankle_3D_gyroscope_y','ankle_3D_gyroscope_z',
+              'ankle_3D_magnetometer_x','ankle_3D_magnetometer_y','ankle_3D_magnetometer_z',
+              'ankle_4D_orientation_x','ankle_4D_orientation_y','ankle_4D_orientation_z','ankle_4D_orientation_w']
   FSL:
-    test_subj: [group1]
+    test_subj: [group2]
     test_ac: [2,6,7,13,17]
     inv_overlap: 1 #(1-overlap) between the windows. i.e 1 for no overlap, 0.5 for 50% overlap
     n_shot: 5
@@ -115,3 +128,10 @@ pamap2:
       num_atoms: 64
     forcast:
       hidden_dim: 20
+EMS:
+  path: D:\\CPR_extracted
+  sample_freq: 100
+  window_len_s: 1
+  bs: 32
+
+

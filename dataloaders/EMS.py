@@ -39,6 +39,10 @@ class EMS(Dataset):
             accgyr=(accgyr-min_vals)/(max_vals-min_vals)
         return accgyr
 
+def get_dataloader(conf):
+    dataset = EMS(conf.EMS.path)
+    dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=True)
+    return dataloader
 # @hydra.main(version_base=None, config_path="C:\\Users\\lahir\\code\\atomicHAR\\conf", config_name="config")
 # def main(conf : DictConfig) -> None:
 #     dataset = EMS(conf.EMS.path)
