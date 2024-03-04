@@ -16,9 +16,6 @@ import utils
 import os
 import FSLtest
 import wandb
-# A logger for this file
-log = logging.getLogger(__name__)
-
 
 sweep_configuration = {
     "method": "random",
@@ -82,8 +79,16 @@ def main(conf : DictConfig) -> None:
                 config=wandb_conf,
                 )
     # conf=conf.params
-    log.info('**********')
-    log.info(conf)
+    logger = logging.getLogger('train_logger')
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler('train_output.log')
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    logger.info('**********')
+    logger.info(conf)
 
     # Check if the specified GPU is available
     if torch.cuda.is_available():
@@ -114,7 +119,7 @@ def main(conf : DictConfig) -> None:
     model_path=utils.get_model_path(conf) 
 
     lr=get_lr(optimizer)
-    log.info(f'new lr={lr}')
+    logger.info(f'new lr={lr}')
 
     min_loss=100
     plot_freq=100000
@@ -123,7 +128,7 @@ def main(conf : DictConfig) -> None:
         if (epoch+1)%10==0:
             scheduler.step()
             lr=get_lr(optimizer)
-            log.info(f'new lr={lr}')
+            logger.info(f'new lr={lr}')
         
         if (epoch+1)%plot_freq==0:
             plot=True
@@ -161,19 +166,19 @@ def main(conf : DictConfig) -> None:
         mean_acc=mean_acc/len(train_dataloader)
 
         if mean_loss<min_loss:
-            log.info('saving model...')
+            logger.info('saving model...')
             min_loss=mean_loss
             torch.save(athar_model.state_dict(),model_path)
 
-        log.info(f'Epoch={epoch}, cls loss = {mean_cls_loss:.5f},center loss = {mean_cl:.5f}, accuracy={mean_acc:.2f}')
+        logger.info(f'Epoch={epoch}, cls loss = {mean_cls_loss:.5f},center loss = {mean_cl:.5f}, accuracy={mean_acc:.2f}')
 
         #***************eval*******************
         if epoch%10==0:
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
-            log.info(f"test accuracy: {eval_out:.2f}")
+            logger.info(f"test accuracy: {eval_out:.2f}")
 
     fsl_acc=FSLtest.run_FSL(conf)
-    log.info(f'FSL accuracy is {fsl_acc:.2f}')
+    logger.info(f'FSL accuracy is {fsl_acc:.2f}')
     if conf.data.wandb:
         wandb.log({'fsl_acc':fsl_acc})
     return fsl_acc
