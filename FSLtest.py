@@ -18,6 +18,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 import numpy as np
 import pandas as pd
+from scipy.special import kl_div
 
 #load the model
 def load_model(conf,device):
@@ -30,16 +31,25 @@ def load_model(conf,device):
     athar_model.to(device)
     return athar_model
 
+def find_layers_by_name(model, layer_name):
+    matching_layers = []
+    for name, module in model.named_modules():
+        if layer_name in name:  # or use == for an exact match
+            matching_layers.append((name, module))
+    return matching_layers[0]
+
 #store intermediate features from the network
 def collect_features(dataloader,model,layer_name,device):
-    model_layer = getattr(model, layer_name)
+    _,layer=find_layers_by_name(model, layer_name)
     # Register the hook to access the features
-    model_layer.register_forward_hook(hook)
-    features=torch.empty(0)
-    for batch in dataloader:
-        imu,activity_original,activity_remapped = batch
-        _=model(imu.to(device))
-        features=torch.cat((features,feature_output.detach().cpu()),dim=0)
+    features=-1
+    if layer:
+        layer.register_forward_hook(hook)
+        features=torch.empty(0)
+        for batch in dataloader:
+            imu,activity_original,activity_remapped = batch
+            _=model(imu.to(device))
+            features=torch.cat((features,feature_output.detach().cpu()),dim=0)
     return features
 
 #same as collect features but for a given input tensor
@@ -112,22 +122,7 @@ def get_FSL_acc(conf,device,data,activity):
             if param.requires_grad:
                 print(name)
 
-    # optimizer = torch.optim.Adam(athar_model.parameters(), lr=0.01)
-
-    # Access the values of the batch normalization (bn) layer
-    # bn_values = athar_model.blstm_bn.running_mean
-    # print(bn_values)
-
-    #register hook to acces features
-    if conf.model.seq_model=='BLSTM':
-        handle = athar_model.blstm_bn.register_forward_hook(hook)
-    elif conf.model.seq_model=='transformer':
-        print('this option is not implemented yet')
-    elif conf.model.seq_model=='seq_CNN':
-        handle = athar_model.cls_mp.register_forward_hook(hook)
-
      #*****************train the FSL classifier***************
-
     df=pd.DataFrame()
     df['activity']=activity.numpy()
     df['ind']=np.arange(len(activity))
@@ -152,17 +147,13 @@ def get_FSL_acc(conf,device,data,activity):
         test_indices=torch.tensor(df['ind'].values)
         test_input=data[test_indices]
         test_labels=activity[test_indices]  
-        
-        #define bn layers and respective feature layers
-        layers=[['cnn12','bn1'],['cnn14','bn2'],['cnn16','bn3'],['blstm_lin','blstm_bn']]
-        # print(athar_model.blstm_bn.running_mean)
-        # print(athar_model.blstm_bn.running_var)
         original_cl=0
         if conf.FSL_test.finetune=='BN':
-            for i in range(100):
+            print('BN adaptation...')
+            for i in range(conf.FSL_test.n_iter):
                 optimizer.zero_grad()
                 pred,features=athar_model(train_inputs.to(device))
-                center_loss=utils.center_loss(features,train_labels,device)
+                center_loss=utils.dis_loss(features,train_labels,device)
                 if i==0:
                     original_cl=center_loss.item()
                 center_loss.backward()
@@ -182,6 +173,12 @@ def get_FSL_acc(conf,device,data,activity):
     print(f'class accuracy={cls_acc_mean}')
     return acc/n
 
+def get_hist(data,bins=100):
+    values,bins=np.histogram(data, bins=bins)
+    values=values/np.sum(values)
+    bins_centers = 0.5*(bins[1:] + bins[:-1])
+    return values,bins_centers
+
 #plot the feature distributions of a given layer from two dataloaders
 def plot_features(train_features,test_features,savepath):
     print('Plotting feature distributions...')
@@ -191,13 +188,11 @@ def plot_features(train_features,test_features,savepath):
         col = i % 8
         #get plot
         train_vals=train_features.view(-1,train_features.shape[1])[:,i].numpy()
-        values,bins=np.histogram(train_vals, bins=100,density=True)
-        bins_centers = 0.5*(bins[1:] + bins[:-1])
+        values,bins_centers=get_hist(train_vals)
         axs[row, col].plot(bins_centers, values)
         
         test_vals=test_features.view(-1,test_features.shape[1])[:,i].numpy()
-        values,bins=np.histogram(test_vals, bins=100,density=True)
-        bins_centers = 0.5*(bins[1:] + bins[:-1])
+        values,bins_centers=get_hist(test_vals)
         axs[row, col].plot(bins_centers, values,linestyle='dotted')
 
         # axs[row, col].set_title(f'Feature {i+1}')
@@ -226,6 +221,7 @@ def run_FSL(conf):
 
     athar_model=load_model(conf,device)
 
+    acc=-1
     if conf.FSL_test.type=='regular':
             #get test accuracy
         if conf.FSL_test.test_eval:
@@ -250,10 +246,22 @@ def run_FSL(conf):
         acc=get_FSL_acc(conf,device,data,activity)
 
     elif conf.FSL_test.type=='fdist':
-        layer=conf.FSL_test.layer
-        train_features=collect_features(train_dataloader,athar_model,layer,device)
-        test_features=collect_features(fsl_dataloader,athar_model,layer,device)
-        plot_features(train_features,test_features,os.path.join(layer+'.png'))
+        if not os.path.exists(conf.FSL_test.out_dir):
+            os.makedirs(conf.FSL_test.out_dir)
+        layer_str=conf.FSL_test.layer
+        train_features=collect_features(train_dataloader,athar_model,layer_str,device)
+        test_features=collect_features(fsl_dataloader,athar_model,layer_str,device)
+        plot_file=os.path.join(conf.FSL_test.out_dir,layer_str+'.png')
+        print('plot file:',plot_file)
+        plot_features(train_features,test_features,plot_file)
+        test_features=test_features.view(-1,test_features.shape[1]).numpy()
+        train_features=train_features.view(-1,train_features.shape[1]).numpy()
+        n_filt=train_features.shape[1]
+        kl_div_list=[utils.get_kl_divergence(test_features[:,flt],train_features[:,flt]) for flt in range(n_filt)]
+        # print(f"KL Divergence: {kl_divergence}")
+        out_file=os.path.join(conf.FSL_test.out_dir,layer_str+'_kl_div.csv')
+        np.savetxt(out_file, kl_div_list, delimiter=",")
+        print(f'KL divergence saved to {out_file}')
     return acc
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")

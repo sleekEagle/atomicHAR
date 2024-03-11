@@ -7,7 +7,7 @@ data:
 
 train:
   use_CL: True
-  lmd: 0
+  lmd: 0.0
 
 model:
   save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
@@ -33,10 +33,13 @@ model:
 
 FSL_test:
   type: regular #regular: normal FSL testing fdist: plot feature dist
-  layer: blstm_bn
-  finetune: others
+  layer: emb_cnn
+  finetune: BN
+
   dataset: [pamap2]
   test_eval: False
+  n_iter: 200
+  out_dir: FSL_out
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\

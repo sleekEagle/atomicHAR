@@ -132,6 +132,7 @@ class HARmodel(nn.Module):
             self.emb_cnn=nn.Conv1d(in_channels=ch_in, out_channels=emb_conf[0],
                                kernel_size=emb_conf[1],
                                stride=emb_conf[2]).double()
+            # self.emb_bn=nn.BatchNorm1d(emb_conf[0]).double()
             cls_conf=conf.model.seq_model.cnn.cls
             emb_n_channles=emb_conf[0]
             self.cls_cnn=nn.Conv1d(in_channels=emb_n_channles, out_channels=num_classes,
@@ -213,6 +214,7 @@ class HARmodel(nn.Module):
             pred=F.softmax(cls_features,dim=1)
         elif self.seq_model=='cnn':
             emb_=self.emb_cnn(features)
+            # emb_=self.emb_bn(emb_)
             emb=emb_.mean(dim=2)
             pred=F.softmax(self.cls_cnn(emb_).mean(dim=2),dim=1)
         return pred,emb

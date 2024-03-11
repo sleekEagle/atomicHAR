@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 import os
+import numpy as np
 
 def get_onehot(t,num_classes):
     return torch.squeeze(torch.eye(num_classes)[t.int()])
@@ -52,18 +53,34 @@ def get_model_path(conf):
     print('save model path:',model_path)
     return model_path
 
+#get KL divergence between two data sequences
+def get_kl_divergence(P_data,Q_data):
+    min_val=min(np.min(P_data),np.min(Q_data))
+    max_val=max(np.max(P_data),np.max(Q_data))
+    vals,_=np.histogram(P_data,bins=100,range=(min_val,max_val))
+    P_dist=vals/np.sum(vals)+1e-6
+    vals,_=np.histogram(Q_data,bins=100,range=(min_val,max_val))
+    Q_dist=vals/np.sum(vals)+1e-6
+    kl_div=np.sum(P_dist*np.log(P_dist/Q_dist))
+    return kl_div
+
 
 #********************************************************************************
 #********************************************************************************
 #***************losses and metrics**********************************************
-def center_loss(features, labels,device):
+def dis_loss(features, labels,device):
     _,n=features.shape
     sums=(torch.zeros(labels.max().item() + 1,n).to(device).double()).index_add_(0, labels.to(device), features,alpha=1)
     nums=(torch.zeros(labels.max().item() + 1).to(device).double()).index_add_(0, labels.to(device), torch.ones_like(labels).to(device).double(),alpha=1)
     nums=nums.unsqueeze(-1).repeat(1,n)
     prototypes=sums/nums
     center_loss = torch.mean((features - prototypes[labels])**2)
-    return center_loss
+    f_ind=torch.arange(0, features.shape[0])
+    f_int_comb = torch.combinations(f_ind, r=2)
+    inter_loss=-torch.mean((features[f_int_comb[:,0]]-features[f_int_comb[:,1]])**2)
+    regulerize_loss = torch.mean((torch.norm(features, p=1,dim=1)-1)**2)**0.5
+    dis_loss=center_loss
+    return dis_loss
 #********************************************************************************
 #********************************************************************************
 

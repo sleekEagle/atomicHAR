@@ -149,7 +149,7 @@ def main(conf : DictConfig) -> None:
             cls_loss=cls_loss_fn(output,activity_oh)
             cl=0
             if conf.train.use_CL:
-                cl=utils.center_loss(features,activity.to(device),device)
+                cl=utils.dis_loss(features,activity.to(device),device)
             loss=cls_loss+conf.train.lmd*cl
             acc=utils.get_acc(activity_oh,output)
 
@@ -168,6 +168,7 @@ def main(conf : DictConfig) -> None:
         if mean_loss<min_loss:
             logger.info('saving model...')
             min_loss=mean_loss
+            os.makedirs(os.path.dirname(model_path), exist_ok=True)
             torch.save(athar_model.state_dict(),model_path)
 
         logger.info(f'Epoch={epoch}, cls loss = {mean_cls_loss:.5f},center loss = {mean_cl:.5f}, accuracy={mean_acc:.2f}')
