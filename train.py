@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from dataloaders import UTD_MHAD,PAMAP2
+from dataloaders import UTD_MHAD,PAMAP2,OPP
 import matplotlib.pyplot as plt
 from models import FCNN
 import torch
@@ -106,9 +106,13 @@ def main(conf : DictConfig) -> None:
             train_dataloader,test_dataloader=UTD_MHAD.get_dataloader(conf)
         elif dataset=='pamap2': 
             train_dataloader,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
+        elif dataset=='opp':
+            # OPP.get_stats(conf)
+            train_dataloader,test_dataloader=OPP.get_dataloader(conf,mode='source')
+
     print('dataloaders obtained...')
 
-    num_classes=len(conf.pamap2.train_ac)
+    num_classes=len(conf[dataset].source_ac)
     athar_model=FCNN.HARmodel(conf,device)
     athar_model.to(device)
     MSE_loss_fn = nn.MSELoss()
@@ -142,6 +146,11 @@ def main(conf : DictConfig) -> None:
             elif conf.data.dataset=='pamap2':
                 imu,activity_original,activity=input
                 activity_oh=utils.get_onehot(activity,num_classes).to(device)
+            elif conf.data.dataset=='opp':
+                imu,activity,participant,ac_name=input
+                activity = activity.to(dtype=torch.int32)
+                activity_oh=utils.get_onehot(activity,num_classes).to(device)
+
 
             optimizer.zero_grad()
 

@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from dataloaders import UTD_MHAD,PAMAP2,EMS
+from dataloaders import UTD_MHAD,PAMAP2,EMS,OPP
 import matplotlib.pyplot as plt
 from models import FCNN
 import torch
@@ -218,6 +218,8 @@ def run_FSL(conf):
         train_dataloader,test_dataloader,fsl_dataloader=PAMAP2.get_dataloader(conf)
     if 'ems' in dataset:
         ems_data_loader=EMS.get_dataloader(conf)   
+    if 'opp' in dataset:
+        fsl_dataloader=OPP.get_dataloader(conf,mode='fsl')
 
     athar_model=load_model(conf,device)
 
@@ -228,6 +230,12 @@ def run_FSL(conf):
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
             print(f'test accuracy={eval_out:.2f}%')
         #collect features from dataloaders
+        # if 'opp' in conf.FSL_test.dataset:
+        if 'opp' in conf.FSL_test.dataset:
+            for batch in fsl_dataloader:
+                imu,activity,participant,ac_name = batch
+                activity = activity.to(dtype=torch.int32)
+                data=imu    
         if 'pamap2' in conf.FSL_test.dataset:
             for batch in fsl_dataloader:
                 pamap2_imu,activity_original,pamap2_activity_remapped = batch

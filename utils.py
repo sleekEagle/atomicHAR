@@ -33,7 +33,12 @@ def eval(conf,model,dataloader,device):
     for i,input in enumerate(dataloader):
         if conf.data.dataset=='pamap2':
             imu,_,activity=input
-            activity_oh=get_onehot(activity,num_classes).to(device)        
+            activity_oh=get_onehot(activity,num_classes).to(device) 
+        if conf.data.dataset=='opp':
+            imu,activity,participant,ac_name=input
+            activity = activity.to(dtype=torch.int32)
+            activity_oh=get_onehot(activity,num_classes).to(device)
+
         output,_=model(imu.to(device))
         acc=get_acc(output,activity_oh)
         mean_acc+=acc
@@ -50,6 +55,9 @@ def get_model_path(conf):
         train_s='trainG_'+','.join([item[-1:] for item in conf[dataset].train_subj])
         test_s='testG_'+','.join([item[-1:] for item in conf[dataset].test_subj])
         model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}_nfeat_{len(cols)}_lmd{lmd}.pth')
+    if dataset=='opp':
+        model_path=os.path.join(model_path,f'opp_lmd{lmd}.pth')
+
     print('save model path:',model_path)
     return model_path
 

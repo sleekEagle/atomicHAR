@@ -1,6 +1,6 @@
 gpu_index: 0
 data:
-  dataset: pamap2
+  dataset: opp
   num_sensors: 6
   wandb: False
   wandb_name: atomicHAR
@@ -36,7 +36,7 @@ FSL_test:
   layer: emb_cnn
   finetune: BN
 
-  dataset: [pamap2]
+  dataset: [opp]
   test_eval: False
   n_iter: 200
   out_dir: FSL_out
@@ -67,6 +67,18 @@ utdmhad:
       atom_emb_dim: 16
     forcast:
       hidden_dim: 20
+opp:
+  path: C:\Users\lahir\Downloads\opportunity+activity+recognition\OpportunityUCIDataset\
+  source_ac: ["Open Door 2","Close Door 2","Close Fridge","Close Dishwasher","Close Drawer 1",
+                 "Close Drawer 2","Close Drawer 3","Clean Table","Drink from Cup","Toggle Switch"]
+  target_ac: ["Open Door 1","Close Door 1","Open Fridge","Open Dishwasher","Open Drawer 1",
+                  "Open Drawer 2","Open Drawer 3"]
+  in_channels: 77
+  sr: 30
+  overlap: 0.5
+  train_bs: 32
+  split: 0.8
+  normalize: True
 pamap2:
   path: C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\
   data_types: ['Protocol']
