@@ -1,17 +1,18 @@
 gpu_index: 0
 data:
   dataset: opp
-  num_sensors: 6
   wandb: False
   wandb_name: atomicHAR
+  normalize: False
 
 train:
   use_CL: True
-  lmd: 0.0
+  lmd: 1.0
+  BN_momentum: 0.1
 
 model:
-  save_path: C:\\Users\\lahir\\data\\atomicHAR\\models\\
-  epochs: 21
+  save_path: D:\models\HAR\
+  epochs: 100
   atoms:
     use_atoms: False
     one_atm_per_time: False #only one atom per time step
@@ -32,14 +33,19 @@ model:
       cls: [-1,1,1]
 
 FSL_test:
-  type: regular #regular: normal FSL testing fdist: plot feature dist
-  layer: emb_cnn
-  finetune: BN
-
+  run_test: False
+  type: regular #regular: normal FSL testing kldiv: plot feature dist and kl divergence
+  layer: emb_bn
+  finetune: BN #other: no ab fine tuning or BN: batch norm finetuning
+  n_shots: 5
   dataset: [opp]
   test_eval: False
   n_iter: 200
   out_dir: FSL_out
+  BN_momentum: 0.0
+  reg_k: 0.0
+  center_k: 1
+  inter_k: 1
 
 utdmhad:
   path: C:\\Users\\lahir\\data\\UTD_MHAD\\
@@ -68,28 +74,47 @@ utdmhad:
     forcast:
       hidden_dim: 20
 opp:
-  path: C:\Users\lahir\Downloads\opportunity+activity+recognition\OpportunityUCIDataset\
-  source_ac: ["Open Door 2","Close Door 2","Close Fridge","Close Dishwasher","Close Drawer 1",
+  path: D:\data\opportunity+activity+recognition\OpportunityUCIDataset\
+  split: split4
+  split1:
+    source_ac: ["Open Door 2","Close Door 2","Close Fridge","Close Dishwasher","Close Drawer 1",
                  "Close Drawer 2","Close Drawer 3","Clean Table","Drink from Cup","Toggle Switch"]
-  target_ac: ["Open Door 1","Close Door 1","Open Fridge","Open Dishwasher","Open Drawer 1",
+    target_ac: ["Open Door 1","Close Door 1","Open Fridge","Open Dishwasher","Open Drawer 1",
                   "Open Drawer 2","Open Drawer 3"]
+  split2:
+    source_ac: ["Close Door 2","Close Drawer 1","Close Drawer 2","Close Drawer 3",
+                "Close Door 1","Open Drawer 1", "Open Drawer 2","Open Door 2","Open Door 1","Open Drawer 3"]
+    target_ac: ["Close Dishwasher","Close Fridge","Open Fridge","Drink from Cup","Open Dishwasher","Clean Table","Toggle Switch"]
+  split3:
+    source_ac: ["Close Dishwasher","Close Fridge","Open Fridge","Drink from Cup","Open Dishwasher","Clean Table","Toggle Switch",
+                "Open Door 1", "Close Door 1","Open Drawer 1","Close Drawer 1"]
+    target_ac: ["Close Door 2","Close Drawer 2","Close Drawer 3","Open Drawer 2","Open Door 2","Open Drawer 3"]
+  split4:
+    source_ac: ["Close Door 2","Close Fridge","Close Dishwasher","Close Drawer 1","Close Door 1",
+                 "Close Drawer 2","Close Drawer 3","Clean Table","Drink from Cup","Toggle Switch"]
+    target_ac: ["Open Door 2","Open Door 1","Open Fridge","Open Dishwasher","Open Drawer 1","Open Drawer 2","Open Drawer 3"]
+
+  source_subj: [1]
+  target_subj: [1]
   in_channels: 77
   sr: 30
+  window_len_s: 1
   overlap: 0.5
   train_bs: 32
-  split: 0.8
+  split_ratio: 0.8
   normalize: True
 pamap2:
   path: C:\\Users\\lahir\\data\\pamap2+physical+activity+monitoring\\PAMAP2_Dataset\\PAMAP2_Dataset\\
   data_types: ['Protocol']
   normalize: True
-  split: 0.8 #train:test split. Only appicable when there is an overlap between train and test subjects
+  split_ratio: 0.8 #train:test split. Only appicable when there is an overlap between train and test subjects
   group1: [101,102,103]
   group2: [104,105,106]
   group3: [107,108,109]
-  train_ac: [1,3,4,5,12,16,24]
-  train_subj: [group2]
+  source_ac: [1,3,4,5,12,16,24]
+  train_subj: [group1,group3]
   test_subj: [group2]
+  in_channels: 36
   required_columns: ['time_stamp','activity_id',
               'hand_3D_acceleration_16_x','hand_3D_acceleration_16_y','hand_3D_acceleration_16_z',
               'hand_3D_gyroscope_x','hand_3D_gyroscope_y','hand_3D_gyroscope_z',

@@ -111,8 +111,8 @@ def main(conf : DictConfig) -> None:
             train_dataloader,test_dataloader=OPP.get_dataloader(conf,mode='source')
 
     print('dataloaders obtained...')
-
-    num_classes=len(conf[dataset].source_ac)
+    split=conf[dataset].split
+    num_classes=len(conf[dataset][split].source_ac)
     athar_model=FCNN.HARmodel(conf,device)
     athar_model.to(device)
     MSE_loss_fn = nn.MSELoss()
@@ -159,6 +159,7 @@ def main(conf : DictConfig) -> None:
             cl=0
             if conf.train.use_CL:
                 cl=utils.dis_loss(features,activity.to(device),device)
+                cl=cl.item()
             loss=cls_loss+conf.train.lmd*cl
             acc=utils.get_acc(activity_oh,output)
 
@@ -166,7 +167,7 @@ def main(conf : DictConfig) -> None:
             optimizer.step()
             mean_loss+=loss.item()
             mean_cls_loss+=cls_loss.item()
-            mean_cl+=cl.item()
+            mean_cl+=cl
             mean_acc+=acc
 
         mean_loss=mean_loss/len(train_dataloader)
@@ -187,11 +188,12 @@ def main(conf : DictConfig) -> None:
             eval_out=utils.eval(conf,athar_model,test_dataloader,device)
             logger.info(f"test accuracy: {eval_out:.2f}")
 
-    fsl_acc=FSLtest.run_FSL(conf)
-    logger.info(f'FSL accuracy is {fsl_acc:.2f}')
-    if conf.data.wandb:
-        wandb.log({'fsl_acc':fsl_acc})
-    return fsl_acc
+    if conf.FSL_test.run_test:
+        fsl_acc=FSLtest.run_FSL(conf)
+        logger.info(f'FSL accuracy is {fsl_acc:.2f}')
+        if conf.data.wandb:
+            wandb.log({'fsl_acc':fsl_acc})
+        return fsl_acc
 
 if __name__ == "__main__":
     main()

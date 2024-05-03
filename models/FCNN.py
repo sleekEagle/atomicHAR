@@ -84,18 +84,20 @@ class AtomLayer(nn.Module):
 
 class HARmodel(nn.Module):
     """Model for human-activity-recognition."""
-    def __init__(self,conf,device):
+    def __init__(self,conf,device,mode='train'):
         super().__init__()
+        if mode=='FSL_test':
+            bn_momentum=conf.FSL_test.BN_momentum
+        elif mode=='train':
+            bn_momentum=conf.train.BN_momentum
         self.device=device
         self.conf=conf
         # Extract features, 1D conv layers
         dataset=conf.data.dataset
-        num_classes=len(conf[dataset].source_ac)
-
         #create cnn feature extractors
         self.feature_ext_list = nn.ModuleList()
-        # cols= [col for col in conf[dataset].required_columns if (('hand' in col) or ('chest' in col) or ('ankle' in col))]
-        # last_channels=len(cols)
+        split=conf[dataset].split
+        num_classes=len(conf[dataset][split].source_ac)
         last_channels=conf[dataset].in_channels
         conc_channels=0
         for i in range(len(conf.model.feature_ext.layers)):
@@ -113,7 +115,7 @@ class HARmodel(nn.Module):
             module[f'relu_{i}'] = nn.ReLU()
             bn=conf.model.feature_ext.bn[i]
             if bn:
-                module[f'bn_{i}']=nn.BatchNorm1d(last_channels).double()
+                module[f'bn_{i}']=nn.BatchNorm1d(last_channels,momentum=bn_momentum).double()
             d=conf.model.feature_ext.dropout[i]
             if d:
                 module[f'drop_{i}'] = nn.Dropout(p=d)
@@ -132,7 +134,7 @@ class HARmodel(nn.Module):
             self.emb_cnn=nn.Conv1d(in_channels=ch_in, out_channels=emb_conf[0],
                                kernel_size=emb_conf[1],
                                stride=emb_conf[2]).double()
-            # self.emb_bn=nn.BatchNorm1d(emb_conf[0]).double()
+            self.emb_bn=nn.BatchNorm1d(emb_conf[0],momentum=bn_momentum).double()
             cls_conf=conf.model.seq_model.cnn.cls
             emb_n_channles=emb_conf[0]
             self.cls_cnn=nn.Conv1d(in_channels=emb_n_channles, out_channels=num_classes,
@@ -154,7 +156,7 @@ class HARmodel(nn.Module):
                                   batch_first=True,
                                   bidirectional=True).double()
             self.blstm_lin = nn.Linear(blstmconf.hidden_size*2, blstmconf.dense).double()
-            self.blstm_bn=nn.BatchNorm1d(blstmconf.dense).double()
+            self.blstm_bn=nn.BatchNorm1d(blstmconf.dense,momentum=bn_momentum).double()
             self.blstm_cls = nn.Linear(blstmconf.dense, self.num_classes).double()
         if conf.model.atoms.use_atoms:
             self.atom_layer_list=nn.ModuleList()
@@ -214,9 +216,9 @@ class HARmodel(nn.Module):
             pred=F.softmax(cls_features,dim=1)
         elif self.seq_model=='cnn':
             emb_=self.emb_cnn(features)
-            # emb_=self.emb_bn(emb_)
             emb=emb_.mean(dim=2)
-            pred=F.softmax(self.cls_cnn(emb_).mean(dim=2),dim=1)
-        return pred,emb
+            emb_=self.emb_bn(emb)
+            pred=F.softmax(self.cls_cnn(emb.unsqueeze(2)),dim=1).squeeze()
+        return pred,emb_
     
 

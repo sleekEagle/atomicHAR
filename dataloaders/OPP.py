@@ -3,13 +3,14 @@ from torch.utils.data import DataLoader
 import numpy as np
 import csv
 import pandas as pd
+import os
 
 def read_opportunity(datapath):
     files = {
         'training': [
-            'S1-ADL1.dat',                'S1-ADL3.dat', 'S1-ADL4.dat', 'S1-ADL5.dat', 'S1-Drill.dat',
-            'S2-ADL1.dat', 'S2-ADL2.dat',                               'S2-ADL5.dat', 'S2-Drill.dat',
-            'S3-ADL1.dat', 'S3-ADL2.dat',                               'S3-ADL5.dat', 'S3-Drill.dat', 
+            'S1-ADL1.dat','S1-ADL3.dat', 'S1-ADL4.dat', 'S1-ADL5.dat', 'S1-Drill.dat',
+            'S2-ADL1.dat', 'S2-ADL2.dat','S2-ADL5.dat', 'S2-Drill.dat',
+            'S3-ADL1.dat', 'S3-ADL2.dat','S3-ADL5.dat', 'S3-Drill.dat', 
             'S4-ADL1.dat', 'S4-ADL2.dat', 'S4-ADL3.dat', 'S4-ADL4.dat', 'S4-ADL5.dat', 'S4-Drill.dat',
             'S1-ADL2.dat',  'S2-ADL3.dat', 'S2-ADL4.dat', 'S3-ADL3.dat', 'S3-ADL4.dat'
 
@@ -65,7 +66,8 @@ def read_opp_files(datapath, filelist, cols, label2id,id2label):
         participant=int(filename.split('/')[-1].split('-')[0][1:])
         nancnt = 0
         print('reading file %d of %d' % (i+1, len(filelist)))
-        with open(datapath.rstrip('/') + '/dataset/%s' % filename, 'r') as f:
+        
+        with open(os.path.join(datapath, 'dataset', filename), 'r') as f:
             reader = csv.reader(f, delimiter=' ')
             for line in reader:
                 elem = []
@@ -81,7 +83,6 @@ def read_opp_files(datapath, filelist, cols, label2id,id2label):
     return {'inputs': np.asarray(data), 'targets': np.asarray(labels, dtype=int)+1,'participants' : np.asarray(participants),'name':np.asarray(activity_name)}
 
 
-# Define your custom dataset class
 '''
 mode: source or fsl
 '''
@@ -96,11 +97,16 @@ class OPP(torch.utils.data.Dataset):
         df['activity']=list(self.data['training']['name'])
         #select activities
         assert mode in ['source','fsl'], 'mode must be source or fsl'
+        split=conf.opp.split
         if mode=='source':
-            valid_acts=conf.opp.source_ac
+            valid_acts=conf.opp[split].source_ac
+            valid_subj=conf.opp.source_subj
         elif mode=='fsl':
-            valid_acts=conf.opp.target_ac
+            valid_acts=conf.opp[split].target_ac
+            valid_subj=conf.opp.target_subj
+        self.num_classes=len(valid_acts)
         df=df[df['activity'].isin(valid_acts)]
+        df=df[df['participant'].isin(valid_subj)]
         #remap labels to start from 0 and be continuous
         df['label'] = pd.Categorical(df['label'])
         df['label'] = df['label'].cat.codes
@@ -116,7 +122,8 @@ class OPP(torch.utils.data.Dataset):
                 participant_list.append(participant)
                 activity_name_list.append(activity_name)
         
-        window_len=int(conf.opp.sr*conf.opp.overlap)
+        window_len=int(conf.opp.sr*conf.opp.window_len_s)
+        skip_num=int(window_len*conf.opp.overlap)
         self.window_data=[]
         self.window_label=[]
         self.window_participant=[]
@@ -126,14 +133,14 @@ class OPP(torch.utils.data.Dataset):
             label=label_list[i]
             participant=participant_list[i]
             activity_name=activity_name_list[i]
-            for j in range(0,data.shape[1]-conf.opp.sr,window_len):
+            for j in range(0,data.shape[1]-conf.opp.sr,skip_num):
                 self.window_data.append(data[:,j:j+window_len])
                 self.window_label.append(label)
                 self.window_participant.append(participant)
                 self.window_activity_name.append(activity_name)
-        self.min_vals=[-1.93, -1.577, -1.394, -4.523, -4.281, -2.273, -0.929, -1.115, -1.246, -1.905, -1.92, -1.726, -12.75, -6.633, -6.735, -0.972, -2.789, -2.053, -1.879, -1.905, -1.876, -14.132, -9.206, -10.771, -1.52, -2.44, -3.013, -4.545, -5.59, -4.153, -14.469, -7.42, -9.635, -1.288, -1.274, -1.685, -5.643, -5.927, -5.111, -25.946, -11.983, -11.906, -3.367, -2.001, -1.537, -0.289, -0.093, -0.296, -9.59, -11.325, -10.663, -7.434, -7.094, -8.536, -37.139, -20.785, -13.114, -20.785, -17.312, -13.114, -0.303, -0.285, -0.093, -0.312, -10.269, -9.279, -9.324, -7.497, -10.534, -9.094, -27.941, -16.592, -15.677, -16.592, -23.075, -15.677, -0.342]
-        self.max_vals=[1.254, 1.815, 1.641, 5.067, 3.716, 2.231, 1.709, 1.186, 1.449, 1.868, 1.813, 1.864, 14.054, 10.112, 5.245, 2.244, 1.597, 1.825, 1.894, 1.821, 1.911, 16.213, 10.385, 12.537, 2.11, 1.801, 2.944, 1.674, 5.688, 5.383, 14.177, 9.019, 6.975, 1.614, 1.454, 1.205, 4.787, 3.436, 4.629, 11.265, 9.964, 11.854, 2.195, 2.207, 2.133, 0.28, 0.07, 0.322, 9.168, 10.511, 7.722, 9.431, 7.849, 6.459, 17.312, 22.325, 13.363, 22.325, 37.139, 13.363, 0.318, 0.277, 0.085, 0.29, 8.518, 11.156, 13.358, 8.411, 8.755, 8.78, 23.075, 16.091, 22.72, 16.091, 27.941, 22.72, 0.273]
-        self.normalize=conf.opp.normalize
+        self.min_vals=[-1.426, -0.987, -0.105, -3.015, -2.563, -1.62, -0.627, -0.779, -0.885, -1.569, -1.321, -0.389, -4.413, -2.086, -3.484, -0.507, -0.859, -1.015, -1.822, -1.376, -0.78, -7.34, -2.944, -5.823, -0.807, -1.164, -1.094, -1.454, -1.031, -0.686, -3.051, -2.971, -2.48, -0.456, -0.849, -0.822, -1.8, -1.579, -1.115, -6.764, -4.818, -1.943, -0.702, -0.726, -0.843, -0.282, -0.087, -0.159, -5.137, -3.05, -4.74, -5.313, -2.028, -2.974, -8.561, -7.719, -7.2, -7.719, -6.388, -7.2, -0.267, -0.225, -0.091, -0.176, -6.623, -4.493, -4.842, -3.569, -2.035, -4.679, -10.799, -6.266, -8.035, -6.266, -6.442, -8.035, -0.227]
+        self.max_vals=[0.216, 0.981, 1.263, 2.765, 2.271, 1.782, 0.733, 0.897, 0.591, -0.004, 0.912, 1.594, 3.871, 2.484, 2.556, 1.417, 0.941, 1.246, 0.638, 1.803, 1.559, 6.7, 4.338, 4.699, 1.528, 0.742, 2.686, -0.031, 1.052, 1.346, 3.549, 2.494, 2.293, 1.048, 0.853, 0.741, 0.652, 0.818, 1.268, 5.817, 4.178, 2.45, 1.384, 0.813, 1.059, 0.24, -0.01, 0.14, 2.285, 2.715, 2.353, 2.398, 5.573, 2.591, 6.388, 9.373, 8.888, 9.373, 8.561, 8.888, 0.318, 0.221, -0.006, 0.238, 2.95, 6.399, 2.229, 8.024, 5.497, 1.909, 6.442, 8.076, 8.909, 8.076, 10.799, 8.909, 0.233]
+        self.normalize=conf.data.normalize
     
     def __getitem__(self, index):
         data=self.window_data[index]
@@ -152,28 +159,26 @@ class OPP(torch.utils.data.Dataset):
 mode : source or fsl
 '''
 def get_dataloader(conf,mode):
+    dataset = OPP(conf,mode)
     if mode=='source':
-        dataset = OPP(conf,'fsl')
         #split the dataloader
-        train_size = int(conf.opp.split * len(dataset))
+        train_size = int(conf.opp.split_ratio * len(dataset))
         test_size = len(dataset) - train_size
         train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
         train_dataloader = DataLoader(train_dataset, batch_size=conf.opp.train_bs, shuffle=True)
         test_dataloader = DataLoader(test_dataset, batch_size=conf.opp.train_bs, shuffle=False)
         return train_dataloader,test_dataloader
-
     #create FSL dataloader
     elif mode=='fsl':
-        fsl_dataset=OPP(conf,'fsl')
-        fsl_dataloader = DataLoader(fsl_dataset, batch_size=len(fsl_dataset), shuffle=True)
+        fsl_dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=True)
         return fsl_dataloader
 
 def get_stats(conf):
-    train_dataloader,test_dataloader=get_dataloader(conf)
+    train_dataloader,test_dataloader=get_dataloader(conf,mode='source')
     data=torch.empty(0)
     activity_list=torch.empty(0)
     print('getting stats...')
-    for batch in test_dataloader:
+    for batch in train_dataloader:
         imu,activity,participant,ac_name = batch
         data=torch.cat((data,imu),dim=0)
         activity_list=torch.cat((activity_list,activity),dim=0)

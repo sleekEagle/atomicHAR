@@ -28,7 +28,9 @@ def get_acc(gt,pred):
     return acc
 
 def eval(conf,model,dataloader,device):
-    num_classes=len(conf.pamap2.train_ac)
+    dataset=conf.data.dataset
+    split=conf[dataset].split
+    num_classes=len(conf[dataset][split].source_ac)
     mean_acc=0
     for i,input in enumerate(dataloader):
         if conf.data.dataset=='pamap2':
@@ -56,9 +58,9 @@ def get_model_path(conf):
         test_s='testG_'+','.join([item[-1:] for item in conf[dataset].test_subj])
         model_path=os.path.join(model_path,f'pamap2_{train_s}_{test_s}_nfeat_{len(cols)}_lmd{lmd}.pth')
     if dataset=='opp':
-        model_path=os.path.join(model_path,f'opp_lmd{lmd}.pth')
-
-    print('save model path:',model_path)
+        train_s='trainS_'+','.join([str(item)[-1:] for item in conf.opp.source_subj])
+        test_s='testS_'+','.join([str(item)[-1:] for item in conf.opp.target_subj])
+        model_path=os.path.join(model_path,f'opp_{train_s}_{test_s}_lmd{lmd}_{conf.opp.split}.pth')
     return model_path
 
 #get KL divergence between two data sequences
@@ -76,7 +78,11 @@ def get_kl_divergence(P_data,Q_data):
 #********************************************************************************
 #********************************************************************************
 #***************losses and metrics**********************************************
-def dis_loss(features, labels,device):
+def dis_loss(features,labels,device,conf):
+    reg_k=conf.FSL_test.reg_k
+    center_k=conf.FSL_test.center_k
+    inter_k=conf.FSL_test.inter_k
+
     _,n=features.shape
     sums=(torch.zeros(labels.max().item() + 1,n).to(device).double()).index_add_(0, labels.to(device), features,alpha=1)
     nums=(torch.zeros(labels.max().item() + 1).to(device).double()).index_add_(0, labels.to(device), torch.ones_like(labels).to(device).double(),alpha=1)
@@ -85,9 +91,10 @@ def dis_loss(features, labels,device):
     center_loss = torch.mean((features - prototypes[labels])**2)
     f_ind=torch.arange(0, features.shape[0])
     f_int_comb = torch.combinations(f_ind, r=2)
-    inter_loss=-torch.mean((features[f_int_comb[:,0]]-features[f_int_comb[:,1]])**2)
+    inter_loss=1/(torch.mean((features[f_int_comb[:,0]]-features[f_int_comb[:,1]])**2)+1e-6)
     regulerize_loss = torch.mean((torch.norm(features, p=1,dim=1)-1)**2)**0.5
-    dis_loss=center_loss
+    dis_loss=center_loss*center_k + regulerize_loss*reg_k + inter_loss*inter_k
+    # dis_loss=center_loss
     return dis_loss
 #********************************************************************************
 #********************************************************************************

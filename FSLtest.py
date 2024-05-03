@@ -21,11 +21,12 @@ import pandas as pd
 from scipy.special import kl_div
 
 #load the model
-def load_model(conf,device):
+def load_model(conf,device,print_path=True):
     model_path=utils.get_model_path(conf)
-    print(f'loading model from {model_path}...')
+    if print_path:
+        print(f'loading model from {model_path}...')
 
-    athar_model=FCNN.HARmodel(conf,device)
+    athar_model=FCNN.HARmodel(conf,device,mode='FSL_test')
     checkpoint = torch.load(model_path)
     athar_model.load_state_dict(checkpoint)
     athar_model.to(device)
@@ -39,17 +40,23 @@ def find_layers_by_name(model, layer_name):
     return matching_layers[0]
 
 #store intermediate features from the network
-def collect_features(dataloader,model,layer_name,device):
+def collect_features(dataloader,model,layer_name,dataset,device):
     _,layer=find_layers_by_name(model, layer_name)
     # Register the hook to access the features
     features=-1
     if layer:
         layer.register_forward_hook(hook)
         features=torch.empty(0)
-        for batch in dataloader:
-            imu,activity_original,activity_remapped = batch
-            _=model(imu.to(device))
-            features=torch.cat((features,feature_output.detach().cpu()),dim=0)
+        if 'pamap2' in dataset:
+            for batch in dataloader:
+                imu,activity_original,activity_remapped = batch
+                _=model(imu.to(device))
+                features=torch.cat((features,feature_output.detach().cpu()),dim=0)
+        elif 'opp' in dataset:
+            for batch in dataloader:
+                imu,activity,participant,ac_name=batch
+                _=model(imu.to(device))
+                features=torch.cat((features,feature_output.detach().cpu()),dim=0)
     return features
 
 #same as collect features but for a given input tensor
@@ -91,7 +98,21 @@ def update_bn_stats(model,input_data,layers,device):
         # print(f'Updating the mean and std of BN layer {bl_str}')
 
 def knn(model,train_inputs,train_l,test_inputs,test_l,device,n=5):
+
+    # print('*****************BN means and vars:')
+    # for name, module in model.named_modules():
+    #     if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.BatchNorm1d):
+    #         print(f"{name} - Mean: {module.running_mean}, Std: {torch.sqrt(module.running_var)}")
+    #         break
+
     _,train_f=model(train_inputs.to(device))
+
+    # print('*****************BN means and vars:')
+    # for name, module in model.named_modules():
+    #     if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.BatchNorm1d):
+    #         print(f"{name} - Mean: {module.running_mean}, Std: {torch.sqrt(module.running_var)}")
+    #         break
+
     train_f=train_f.cpu().detach().numpy()
     train_l=train_l.numpy()
     knn = KNeighborsClassifier(n_neighbors=n)
@@ -122,56 +143,67 @@ def get_FSL_acc(conf,device,data,activity):
             if param.requires_grad:
                 print(name)
 
-     #*****************train the FSL classifier***************
+    #*****************train the FSL classifier***************
     df=pd.DataFrame()
     df['activity']=activity.numpy()
     df['ind']=np.arange(len(activity))
 
     acc,n=0,0
     cls_acc=[]
+    n_shots=conf.FSL_test.n_shots
+
+    train_df_running=df.copy()
 
     while True:
-        if np.min(df.groupby('activity').size().values)<5:
+        if np.min(train_df_running.groupby('activity').size().values)<(1+n_shots):
             break
         n+=1
         #reload model 
-        athar_model=load_model(conf,device)
+        athar_model=load_model(conf,device,print_path=False)
+        athar_model.train()
         optimizer = optim.SGD(athar_model.parameters(), lr=0.001, momentum=0.9)
         
-        train_df = df.groupby('activity').sample(n=5,random_state=1)
+        train_df = train_df_running.groupby('activity').sample(n=n_shots,random_state=1)
         train_indices=torch.tensor(train_df['ind'].values)
         train_inputs=data[train_indices]
-        train_labels=activity[train_indices]   
+        train_labels=activity[train_indices]  
+        train_df_running=train_df_running.drop(train_df['ind']) 
 
-        df=df.drop(train_df['ind'])
-        test_indices=torch.tensor(df['ind'].values)
+        test_df=df.drop(train_df['ind'])
+        test_indices=torch.tensor(test_df['ind'].values)
         test_input=data[test_indices]
         test_labels=activity[test_indices]  
-        original_cl=0
+        original_al=0
         if conf.FSL_test.finetune=='BN':
-            print('BN adaptation...')
+            if n==1: print('BN adaptation...')
             for i in range(conf.FSL_test.n_iter):
                 optimizer.zero_grad()
                 pred,features=athar_model(train_inputs.to(device))
-                center_loss=utils.dis_loss(features,train_labels,device)
-                if i==0:
-                    original_cl=center_loss.item()
-                center_loss.backward()
+                adapt_loss=utils.dis_loss(features,train_labels,device,conf)
+                if i==0: original_al=adapt_loss.item()
+                adapt_loss.backward()
                 optimizer.step()
-            last_cl=center_loss.item()
-            if last_cl>original_cl:
+            last_al=adapt_loss.item()
+            if last_al>original_al:
                 print('using original model')
-                athar_model=load_model(conf,device)
+                athar_model=load_model(conf,device,print_path=False)
 
-        acc_,class_acc_=knn(athar_model,train_inputs,train_labels,test_input,test_labels,device,n=5)
-        print(f'running acc={acc_:.2f}')
+        acc_,class_acc_=knn(athar_model,train_inputs,train_labels,test_input,test_labels,device,n=1)
+        # print(f'running acc={acc_:.2f}')
         acc+=acc_
         cls_acc.append(class_acc_)
     print(f'FSL accuracy is {acc/n:.2f}  #runs={n}')
-    cls_acc_mean=np.mean(np.array(cls_acc),axis=0)
+    cls_acc=np.array(cls_acc)*100
+    cls_acc_mean=np.mean(cls_acc,axis=0)
     cls_acc_mean = [round(val, 2) for val in list(cls_acc_mean)]
-    print(f'class accuracy={cls_acc_mean}')
-    return acc/n
+    cls_acc_std=np.std(cls_acc,axis=0)
+    cls_acc_std = [round(val, 2) for val in list(cls_acc_std)]
+
+    print(f'class accuracy mean={cls_acc_mean}') 
+    print(f'class accuracy std={cls_acc_std}') 
+    print(f'mean acc={acc/n*100:.2f}')
+
+    return acc/n*100
 
 def get_hist(data,bins=100):
     values,bins=np.histogram(data, bins=bins)
@@ -220,6 +252,8 @@ def run_FSL(conf):
         ems_data_loader=EMS.get_dataloader(conf)   
     if 'opp' in dataset:
         fsl_dataloader=OPP.get_dataloader(conf,mode='fsl')
+        if conf.FSL_test.type=='kldiv':
+            train_dataloader,_=OPP.get_dataloader(conf,mode='source')
 
     athar_model=load_model(conf,device)
 
@@ -253,12 +287,14 @@ def run_FSL(conf):
 
         acc=get_FSL_acc(conf,device,data,activity)
 
-    elif conf.FSL_test.type=='fdist':
+    elif conf.FSL_test.type=='kldiv':
+        dataset=conf.FSL_test.dataset
         if not os.path.exists(conf.FSL_test.out_dir):
             os.makedirs(conf.FSL_test.out_dir)
         layer_str=conf.FSL_test.layer
-        train_features=collect_features(train_dataloader,athar_model,layer_str,device)
-        test_features=collect_features(fsl_dataloader,athar_model,layer_str,device)
+
+        train_features=collect_features(train_dataloader,athar_model,layer_str,dataset,device)
+        test_features=collect_features(fsl_dataloader,athar_model,layer_str,dataset,device)
         plot_file=os.path.join(conf.FSL_test.out_dir,layer_str+'.png')
         print('plot file:',plot_file)
         plot_features(train_features,test_features,plot_file)

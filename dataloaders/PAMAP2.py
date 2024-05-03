@@ -264,14 +264,14 @@ def get_dataloader(conf):
     window=conf.pamap2.window_len_s*conf.pamap2.sample_freq
     overlap=conf.pamap2.inv_overlap
 
-    train_actions=conf.pamap2.train_ac
+    train_actions=conf.pamap2.source_ac
 
     def get_comb_sub_list(conf,sub_list):
         return list(itertools.chain.from_iterable([conf.pamap2[item] for item in sub_list]))
 
     train_subjects=get_comb_sub_list(conf,conf.pamap2.train_subj)
     test_subjects=get_comb_sub_list(conf,conf.pamap2.test_subj)
-    split=conf.pamap2.split
+    split=conf.pamap2.split_ratio
     #get overlapping subjects
     non_overlapping_train_subjects = list(set(train_subjects).difference(test_subjects))
     overlapping_subjects=list(set(train_subjects).intersection(test_subjects))
